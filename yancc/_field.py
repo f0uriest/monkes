@@ -21,13 +21,13 @@ class Field(eqx.Module):
     rho : float
         Flux surface label.
     B_sup_p : jax.Array, shape(ntheta, nzeta)
-        B^phi, contravariant radial component of field.
+        B^psi, contravariant radial component of field.
     B_sup_t : jax.Array, shape(ntheta, nzeta)
         B^theta, contravariant poloidal component of field.
     B_sup_z : jax.Array, shape(ntheta, nzeta)
         B^zeta, contravariant toroidal component of field.
     B_sub_p : jax.Array, shape(ntheta, nzeta)
-        B_phi, covariant radial component of field.
+        B_psi, covariant radial component of field.
     B_sub_t : jax.Array, shape(ntheta, nzeta)
         B_theta, covariant poloidal component of field.
     B_sub_z : jax.Array, shape(ntheta, nzeta)
