@@ -1,4 +1,4 @@
-"""yancc : Yet Another NeoClassical Code."""
+"""monkes : Monoenergetic Kinetic Equation Solver."""
 
 from ._core import monoenergetic_dke_solve
 from ._field import Field

@@ -78,9 +78,9 @@ def monoenergetic_dke_solve(field, global_maxwellians, Er, v, nl, nt=None, nz=No
 
     Parameters
     ----------
-    field : yancc.Field
+    field : monkes.Field
         Magnetic field information.
-    global_maxwellians : iterable of yancc.GlobalMaxwellian
+    global_maxwellians : iterable of monkes.GlobalMaxwellian
         Maxwellian distributions of species involved.
     Er : float
         Radial electric field.
