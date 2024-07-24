@@ -94,7 +94,7 @@ def monoenergetic_dke_solve(field, global_maxwellians, Er, v, nl, nt=None, nz=No
     Returns
     -------
     Dij : jax.Array, shape(3,3)
-        Monoenegetic coefficients.
+        Monoenergetic coefficients.
     f : jax.Array, shape(3, nt*nz*nl)
         Perturbed distribution function.
     s : jax.Array, shape(3, nt*nz*nl)

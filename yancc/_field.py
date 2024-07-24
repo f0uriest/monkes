@@ -40,6 +40,10 @@ class Field(eqx.Module):
 
     # note: assumes (psi, theta, zeta) coordinates, not (rho, theta, zeta)
     rho: float
+    theta: Float[Array, "ntheta "]
+    zeta: Float[Array, "nzeta "]
+    wtheta: Float[Array, "ntheta "]
+    wzeta: Float[Array, "nzeta "]
     B_sup_p: Float[Array, "ntheta nzeta"]
     B_sup_t: Float[Array, "ntheta nzeta"]
     B_sup_z: Float[Array, "ntheta nzeta"]
@@ -76,6 +80,10 @@ class Field(eqx.Module):
             B_sup_t * self._dfdt(self.Bmag) + B_sup_z * self._dfdz(self.Bmag)
         ) / self.Bmag
         self.Bmag_fsa = self.flux_surface_average(self.Bmag)
+        self.theta = jnp.linspace(0, 2 * np.pi, self.ntheta, endpoint=False)
+        self.zeta = jnp.linspace(0, 2 * np.pi / NFP, self.nzeta, endpoint=False)
+        self.wtheta = jnp.diff(self.theta, append=jnp.array([2 * jnp.pi]))
+        self.wzeta = jnp.diff(self.theta, append=jnp.array([2 * jnp.pi / NFP]))
 
     @classmethod
     def from_desc(cls, eq, rho: int, ntheta: float, nzeta: float):
