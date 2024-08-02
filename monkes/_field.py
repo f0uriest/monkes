@@ -160,7 +160,59 @@ class Field(eqx.Module):
         ntheta, nzeta : int
             Number of points on a surface in poloidal and toroidal directions.
         """
-        raise NotImplementedError
+        assert (ntheta % 2 == 1) and (nzeta % 2 == 1), "ntheta and nzeta must be odd"
+        from netCDF4 import Dataset
+
+        file = Dataset(booz, mode="r")
+
+        ns = file.variables["ns_b"][:].filled()
+        nfp = file.variables["nfp_b"][:].filled()
+
+        theta = jnp.linspace(0, 2 * np.pi, ntheta, endpoint=False)
+        zeta = jnp.linspace(0, 2 * np.pi / nfp, nzeta, endpoint=False)
+
+        assert "bmns" not in file.variables, "non-symmetric booz-xform not supported"
+
+        s_full = jnp.linspace(0, 1, ns)
+        hs = 1 / (ns - 1)
+        s_half = s_full[0:-1] + hs / 2
+
+        aspect = file.variables["aspect_b"][:].filled()
+        g_mnc = file.variables["gmn_b"][:].filled()
+        b_mnc = file.variables["bmnc_b"][:].filled()
+        r_mnc = file.variables["rmnc_b"][:].filled()
+        nfp = file.variables["nfp_b"][:].filled()
+        iota = file.variables["iota_b"][:].filled()
+        psi_s = file.variables["phip_b"][:].filled()
+        buco = file.variables["buco_b"][:].filled()  # (AKA Boozer I)
+        bvco = file.variables["bvco_b"][:].filled()  # (AKA Boozer G)
+
+        # assuming the field is only over a single flux surface s
+        g_mnc = interpax.interp1d(s, s_half, g_mnc)
+        b_mnc = interpax.interp1d(s, s_half, b_mnc)
+        R0 = interpax.interp1d(s, s_half, r_mnc[:, 0])
+        buco = interpax.interp1d(s, s_full, buco)
+        bvco = interpax.interp1d(s, s_full, bvco)
+        iota = interpax.interp1d(s, s_full, iota)
+        psi_s = interpax.interp1d(s, s_full, psi_s)
+
+        xm = file.variables["ixm_b"][:].filled()
+        xn = file.variables["ixn_b"][:].filled()
+
+        sqrtg = vmec_eval(theta[:, None], zeta[None, :], g_mnc, 0, xm, xn)
+        Bmag = vmec_eval(theta[:, None], zeta[None, :], b_mnc, 0, xm, xn)
+
+        a_minor = R0 / aspect
+        data = {}
+        data["sqrtg"] = sqrtg
+        data["Bmag"] = Bmag
+        data["B_sub_t"] = buco * jnp.ones((ntheta, nzeta))
+        data["B_sub_z"] = bvco * jnp.ones((ntheta, nzeta))
+        data["B_sup_t"] = iota / sqrtg
+        data["B_sup_z"] = 1 / sqrtg
+        data["psi_r"] = psi_s * 2 * jnp.sqrt(s) / a_minor
+
+        return cls(rho=jnp.sqrt(s), **data, NFP=nfp)
 
     def flux_surface_average(self, f: Float[Array, "ntheta nzeta"]) -> float:
         """Compute flux surface average of f."""
@@ -340,3 +392,34 @@ class MonoenergeticDKOperator(eqx.Module):
                 - (k + 2) / 2 * self.field.bdotgradB * f / self.field.Bmag
             )
         )
+
+
+def vmec_eval(t, z, xc, xs, m, n):
+    """Evaluate a vmec style double-fourier series.
+
+    eg sum_mn xc*cos(m*t-n*z) + xs*sin(m*t-n*z)
+
+    Parameters
+    ----------
+    t, z : float, jax.Array
+        theta, zeta coordinates to evaluate at.
+    xc, xs : jax.Array
+        Cosine, sine coefficients of double fourier series.
+    m, n : jax.Array
+        Poloidal and toroidal mode numbers.
+
+    Returns
+    -------
+    x : float, jax.Array
+        Evaluated quantity at t, z.
+    """
+    xc, xs, m, n = jnp.atleast_1d(xc, xs, m, n)
+    xc, xs, m, n = jnp.broadcast_arrays(xc, xs, m, n)
+    return _vmec_eval(t, z, xc, xs, m, n)
+
+
+@functools.partial(jnp.vectorize, signature="(),(),(n),(n),(n),(n)->()")
+def _vmec_eval(t, z, xc, xs, m, n):
+    c = (xc * jnp.cos(m * t - n * z)).sum()
+    s = (xs * jnp.sin(m * t - n * z)).sum()
+    return c + s
