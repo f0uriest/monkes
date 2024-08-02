@@ -200,11 +200,7 @@ def nupar_ab(
     nb = maxwellian_b.density
     vtb = maxwellian_b.v_thermal
     return (
-        2
-        * gamma_ab(maxwellian_a, maxwellian_b, v)
-        * nb
-        / v**3
-        * chandrasekhar(v / vtb)
+        2 * gamma_ab(maxwellian_a, maxwellian_b, v) * nb / v**3 * chandrasekhar(v / vtb)
     )
 
 
