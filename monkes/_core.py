@@ -27,7 +27,7 @@ def _source2(field, k):
 @jit
 @functools.partial(jnp.vectorize, signature="()->(m,n)", excluded=[0])
 def _source3(field, k):
-    g = field.Bmag
+    g = field.Bmag / field.Bmag.mean()
     prefactor = jnp.where(k == 1, 1, 0)
     out = prefactor * g
     return jnp.where(k == 0, out.at[0, 0].set(0.0), out)

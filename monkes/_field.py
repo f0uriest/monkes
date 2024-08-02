@@ -323,7 +323,10 @@ class MonoenergeticDKOperator(eqx.Module):
     @functools.partial(jnp.vectorize, signature="(m,n),()->(m,n)", excluded=[0])
     def _Dk(self, f, k):
         return (
-            -self.Erhat / self.field.Bmag_fsa * self.field.Bxgradpsidotgrad(f)
+            -self.Erhat
+            / self.field.psi_r
+            / self.field.B2mag_fsa
+            * self.field.Bxgradpsidotgrad(f)
             + k * (k + 1) / 2 * self.nuhat * f
         )
 
@@ -334,6 +337,6 @@ class MonoenergeticDKOperator(eqx.Module):
             / (2 * k + 3)
             * (
                 self.field.bdotgrad(f)
-                + (k + 2) / 2 * self.field.bdotgradB * f / self.field.Bmag
+                - (k + 2) / 2 * self.field.bdotgradB * f / self.field.Bmag
             )
         )
