@@ -20,20 +20,20 @@ class Field(eqx.Module):
     ----------
     rho : float
         Flux surface label.
-    B_sup_p : jax.Array, shape(ntheta, nzeta)
-        B^psi, contravariant radial component of field.
     B_sup_t : jax.Array, shape(ntheta, nzeta)
         B^theta, contravariant poloidal component of field.
     B_sup_z : jax.Array, shape(ntheta, nzeta)
         B^zeta, contravariant toroidal component of field.
-    B_sub_p : jax.Array, shape(ntheta, nzeta)
-        B_psi, covariant radial component of field.
     B_sub_t : jax.Array, shape(ntheta, nzeta)
         B_theta, covariant poloidal component of field.
     B_sub_z : jax.Array, shape(ntheta, nzeta)
         B_zeta, covariant toroidal component of field.
+    Bmag : jax.Array, shape(ntheta, nzeta)
+        Magnetic field magnitude.
     sqrtg : jax.Array, shape(ntheta, nzeta)
-        Coordinate jacobian determinant.
+        Coordinate jacobian determinant from (psi, theta, zeta) to (R, phi, Z).
+    psi_r : float
+        Derivative of toroidal flux wrt minor radius (rho*a_minor)
     NFP : int
         Number of field periods.
     """
@@ -44,22 +44,22 @@ class Field(eqx.Module):
     zeta: Float[Array, "nzeta "]
     wtheta: Float[Array, "ntheta "]
     wzeta: Float[Array, "nzeta "]
-    B_sup_p: Float[Array, "ntheta nzeta"]
     B_sup_t: Float[Array, "ntheta nzeta"]
     B_sup_z: Float[Array, "ntheta nzeta"]
-    B_sub_p: Float[Array, "ntheta nzeta"]
     B_sub_t: Float[Array, "ntheta nzeta"]
     B_sub_z: Float[Array, "ntheta nzeta"]
     sqrtg: Float[Array, "ntheta nzeta"]
     Bmag: Float[Array, "ntheta nzeta"]
     bdotgradB: Float[Array, "ntheta nzeta"]
     Bmag_fsa: float
+    B2mag_fsa: float
+    psi_r: float
     ntheta: int = eqx.field(static=True)
     nzeta: int = eqx.field(static=True)
     NFP: int = eqx.field(static=True)
 
     def __init__(
-        self, rho, B_sup_p, B_sup_t, B_sup_z, B_sub_p, B_sub_t, B_sub_z, sqrtg, NFP=1
+        self, rho, B_sup_t, B_sup_z, B_sub_t, B_sub_z, Bmag, sqrtg, psi_r, NFP=1
     ):
         self.rho = rho
         self.NFP = NFP
@@ -68,18 +68,18 @@ class Field(eqx.Module):
         assert (self.ntheta % 2 == 1) and (
             self.nzeta % 2 == 1
         ), "ntheta and nzeta must be odd"
-        self.B_sup_p = B_sup_p
         self.B_sup_t = B_sup_t
         self.B_sup_z = B_sup_z
-        self.B_sub_p = B_sub_p
         self.B_sub_t = B_sub_t
         self.B_sub_z = B_sub_z
         self.sqrtg = sqrtg
-        self.Bmag = B_sup_p * B_sub_p + B_sup_t * B_sub_t + B_sup_z * B_sub_z
+        self.Bmag = Bmag
         self.bdotgradB = (
             B_sup_t * self._dfdt(self.Bmag) + B_sup_z * self._dfdz(self.Bmag)
         ) / self.Bmag
         self.Bmag_fsa = self.flux_surface_average(self.Bmag)
+        self.B2mag_fsa = self.flux_surface_average(self.Bmag**2)
+        self.psi_r = psi_r
         self.theta = jnp.linspace(0, 2 * np.pi, self.ntheta, endpoint=False)
         self.zeta = jnp.linspace(0, 2 * np.pi / NFP, self.nzeta, endpoint=False)
         self.wtheta = jnp.diff(self.theta, append=jnp.array([2 * jnp.pi]))
@@ -104,17 +104,26 @@ class Field(eqx.Module):
         from desc.grid import LinearGrid
 
         grid = LinearGrid(rho=rho, theta=ntheta, zeta=nzeta, endpoint=False, NFP=eq.NFP)
-        keys = ["B^rho", "B^theta", "B^zeta", "B_rho", "B_theta", "B_zeta", "sqrt(g)"]
+        keys = [
+            "B^theta",
+            "B^zeta",
+            "B_theta",
+            "B_zeta",
+            "|B|",
+            "sqrt(g)",
+            "psi_r",
+            "a",
+        ]
         desc_data = eq.compute(keys, grid=grid)
 
         data = {
-            "B_sup_p": desc_data["B^rho"] * desc_data["psi_r"],
             "B_sup_t": desc_data["B^theta"],
             "B_sup_z": desc_data["B^zeta"],
-            "B_sub_p": desc_data["B_rho"] / desc_data["psi_r"],
             "B_sub_t": desc_data["B_theta"],
             "B_sub_z": desc_data["B_zeta"],
+            "Bmag": desc_data["|B|"],
             "sqrtg": desc_data["sqrt(g)"] / desc_data["psi_r"],
+            "psi_r": desc_data["psi_r"][0] / desc_data["a"],
         }
 
         data = {
