@@ -123,14 +123,15 @@ class Field(eqx.Module):
             "B_sub_z": desc_data["B_zeta"],
             "Bmag": desc_data["|B|"],
             "sqrtg": desc_data["sqrt(g)"] / desc_data["psi_r"],
-            "psi_r": desc_data["psi_r"][0] / desc_data["a"],
         }
 
         data = {
             key: val.reshape((grid.num_theta, grid.num_zeta), order="F")
             for key, val in data.items()
         }
-        return cls(rho=rho, **data, NFP=eq.NFP)
+        return cls(
+            rho=rho, psi_r=desc_data["psi_r"][0] / desc_data["a"], **data, NFP=eq.NFP
+        )
 
     @classmethod
     def from_vmec(cls, wout, s: float, ntheta: int, nzeta: int):
