@@ -50,10 +50,22 @@ def compute_monoenergetic_coefficients(f, s, field):
     """Compute D_ij coefficients from solution for distribution function f."""
     f = f.reshape((3, -1, field.ntheta, field.nzeta))
     s = s.reshape((3, -1, field.ntheta, field.nzeta))
-    g = s[:, None, ...] * f[None, :, ...]
-    Dijl = jax.vmap(jax.vmap(field.flux_surface_average))(g)
-    Dijl = Dijl * jnp.sqrt(2 / (2 * jnp.arange(f.shape[1]) + 1))
-    return Dijl.sum(axis=-1)
+    D11 = 2 * field.flux_surface_average(
+        s[0, 0] * f[0, 0]
+    ) + 2 / 5 * field.flux_surface_average(s[0, 2] * f[0, 2])
+    D12 = D11
+    D13 = 2 * field.flux_surface_average(
+        s[0, 0] * f[2, 0]
+    ) + 2 / 5 * field.flux_surface_average(s[0, 2] * f[2, 2])
+    D21 = D11
+    D22 = D11
+    D23 = D13
+    D31 = 2 / 3 * field.flux_surface_average(field.Bmag / field.Bmag.mean() * f[0, 1])
+    D32 = D31
+    D33 = 2 / 3 * field.flux_surface_average(field.Bmag / field.Bmag.mean() * f[2, 1])
+    Dij = jnp.array([[D11, D12, D13], [D21, D22, D23], [D31, D32, D33]])
+
+    return Dij.squeeze()
 
 
 @functools.partial(jax.jit, static_argnames=("nl",))
