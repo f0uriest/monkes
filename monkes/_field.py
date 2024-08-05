@@ -232,7 +232,7 @@ class Field(eqx.Module):
     ) -> Float[Array, "ntheta nzeta"]:
         """𝐁 × ∇ ψ ⋅ ∇ f."""
         return (
-            self.B_sub_z * self._dfdt(f) + self.B_sub_t * self._dfdz(f)
+            self.B_sub_z * self._dfdt(f) - self.B_sub_t * self._dfdz(f)
         ) / self.sqrtg
 
     @functools.partial(jnp.vectorize, signature="(m,n)->(m,n)", excluded=[0])
