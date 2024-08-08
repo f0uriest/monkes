@@ -149,7 +149,9 @@ class Field(eqx.Module):
         raise NotImplementedError
 
     @classmethod
-    def from_booz_xform(cls, booz, s: float, ntheta: int, nzeta: int):
+    def from_booz_xform(
+        cls, booz, s: float, ntheta: int, nzeta: int, cutoff: float = 0.0
+    ):
         """Construct Field from BOOZ_XFORM file.
 
         Parameters
@@ -160,6 +162,8 @@ class Field(eqx.Module):
             Flux surface label.
         ntheta, nzeta : int
             Number of points on a surface in poloidal and toroidal directions.
+        cutoff : float
+            Modes with abs(b_mn) < cutoff * abs(b_00) will be excluded.
         """
         assert (ntheta % 2 == 1) and (nzeta % 2 == 1), "ntheta and nzeta must be odd"
         from netCDF4 import Dataset
@@ -200,8 +204,10 @@ class Field(eqx.Module):
         xm = file.variables["ixm_b"][:].filled()
         xn = file.variables["ixn_b"][:].filled()
 
-        sqrtg = vmec_eval(theta[:, None], zeta[None, :], g_mnc, 0, xm, xn)
-        Bmag = vmec_eval(theta[:, None], zeta[None, :], b_mnc, 0, xm, xn)
+        mask = jnp.abs(b_mnc) > cutoff * jnp.abs(b_mnc).max()
+
+        sqrtg = vmec_eval(theta[:, None], zeta[None, :], g_mnc * mask, 0, xm, xn)
+        Bmag = vmec_eval(theta[:, None], zeta[None, :], b_mnc * mask, 0, xm, xn)
 
         a_minor = R0 / aspect
         data = {}
