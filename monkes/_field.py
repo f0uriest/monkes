@@ -36,6 +36,10 @@ class Field(eqx.Module):
         Derivative of toroidal flux wrt minor radius (rho*a_minor)
     NFP : int
         Number of field periods.
+    deriv_mode : {"fft", "fd2", "fd4", "fd6"}
+        Method to use for approximating poloidal and toroidal derivatives. "fft" uses
+        spectral differentiation of the Fourier series, fd{2,4,6} uses centered finite
+        differences of the specified order.
     """
 
     # note: assumes (psi, theta, zeta) coordinates, not (rho, theta, zeta)
@@ -57,10 +61,24 @@ class Field(eqx.Module):
     ntheta: int = eqx.field(static=True)
     nzeta: int = eqx.field(static=True)
     NFP: int = eqx.field(static=True)
+    deriv_mode: str = eqx.field(static=True)
 
     def __init__(
-        self, rho, B_sup_t, B_sup_z, B_sub_t, B_sub_z, Bmag, sqrtg, psi_r, NFP=1
+        self,
+        rho: float,
+        B_sup_t: Float[Array, "ntheta nzeta"],
+        B_sup_z: Float[Array, "ntheta nzeta"],
+        B_sub_t: Float[Array, "ntheta nzeta"],
+        B_sub_z: Float[Array, "ntheta nzeta"],
+        Bmag: Float[Array, "ntheta nzeta"],
+        sqrtg: Float[Array, "ntheta nzeta"],
+        psi_r: float,
+        NFP: int = 1,
+        *,
+        deriv_mode: str = "fft"
     ):
+        assert deriv_mode in ["fft", "fd2", "fd4", "fd6"]
+        self.deriv_mode = deriv_mode
         self.rho = rho
         self.NFP = NFP
         self.ntheta = sqrtg.shape[0]
@@ -68,6 +86,9 @@ class Field(eqx.Module):
         assert (self.ntheta % 2 == 1) and (
             self.nzeta % 2 == 1
         ), "ntheta and nzeta must be odd"
+        if "fd" in deriv_mode:
+            min_length = int(deriv_mode[-1]) + 1
+            assert self.ntheta >= min_length and self.nzeta >= min_length
         self.B_sup_t = B_sup_t
         self.B_sup_z = B_sup_z
         self.B_sub_t = B_sub_t
@@ -86,7 +107,9 @@ class Field(eqx.Module):
         self.wzeta = jnp.diff(self.theta, append=jnp.array([2 * jnp.pi / NFP]))
 
     @classmethod
-    def from_desc(cls, eq, rho: int, ntheta: float, nzeta: float):
+    def from_desc(
+        cls, eq, rho: int, ntheta: float, nzeta: float, deriv_mode: str = "fft"
+    ):
         """Construct Field from DESC equilibrium.
 
         Parameters
@@ -98,6 +121,10 @@ class Field(eqx.Module):
         ntheta, nzeta : int
             Number of points on a surface in poloidal and toroidal directions.
             Both must be odd.
+        deriv_mode : {"fft", "fd2", "fd4", "fd6"}
+            Method to use for approximating poloidal and toroidal derivatives.
+            "fft" uses spectral differentiation of the Fourier series, fd{2,4,6} uses
+            centered finite differences of the specified order.
         """
         assert (ntheta % 2 == 1) and (nzeta % 2 == 1), "ntheta and nzeta must be odd"
 
@@ -130,11 +157,17 @@ class Field(eqx.Module):
             for key, val in data.items()
         }
         return cls(
-            rho=rho, psi_r=desc_data["psi_r"][0] / desc_data["a"], **data, NFP=eq.NFP
+            rho=rho,
+            psi_r=desc_data["psi_r"][0] / desc_data["a"],
+            **data,
+            NFP=eq.NFP,
+            deriv_mode=deriv_mode
         )
 
     @classmethod
-    def from_vmec(cls, wout, s: float, ntheta: int, nzeta: int):
+    def from_vmec(
+        cls, wout, s: float, ntheta: int, nzeta: int, deriv_mode: str = "fft"
+    ):
         """Construct Field from VMEC equilibrium.
 
         Parameters
@@ -145,12 +178,22 @@ class Field(eqx.Module):
             Flux surface label.
         ntheta, nzeta : int
             Number of points on a surface in poloidal and toroidal directions.
+        deriv_mode : {"fft", "fd2", "fd4", "fd6"}
+            Method to use for approximating poloidal and toroidal derivatives.
+            "fft" uses spectral differentiation of the Fourier series, fd{2,4,6} uses
+            centered finite differences of the specified order.
         """
         raise NotImplementedError
 
     @classmethod
     def from_booz_xform(
-        cls, booz, s: float, ntheta: int, nzeta: int, cutoff: float = 0.0
+        cls,
+        booz,
+        s: float,
+        ntheta: int,
+        nzeta: int,
+        cutoff: float = 0.0,
+        deriv_mode: str = "fft",
     ):
         """Construct Field from BOOZ_XFORM file.
 
@@ -164,6 +207,10 @@ class Field(eqx.Module):
             Number of points on a surface in poloidal and toroidal directions.
         cutoff : float
             Modes with abs(b_mn) < cutoff * abs(b_00) will be excluded.
+        deriv_mode : {"fft", "fd2", "fd4", "fd6"}
+            Method to use for approximating poloidal and toroidal derivatives.
+            "fft" uses spectral differentiation of the Fourier series, fd{2,4,6} uses
+            centered finite differences of the specified order.
         """
         assert (ntheta % 2 == 1) and (nzeta % 2 == 1), "ntheta and nzeta must be odd"
         from netCDF4 import Dataset
@@ -219,7 +266,7 @@ class Field(eqx.Module):
         data["B_sup_z"] = 1 / sqrtg
         data["psi_r"] = psi_s * 2 * jnp.sqrt(s) / a_minor
 
-        return cls(rho=jnp.sqrt(s), **data, NFP=nfp)
+        return cls(rho=jnp.sqrt(s), **data, NFP=nfp, deriv_mode=deriv_mode)
 
     def flux_surface_average(self, f: Float[Array, "ntheta nzeta"]) -> float:
         """Compute flux surface average of f."""
@@ -243,21 +290,45 @@ class Field(eqx.Module):
 
     @functools.partial(jnp.vectorize, signature="(m,n)->(m,n)", excluded=[0])
     def _dfdt(self, f: Float[Array, "ntheta nzeta"]) -> Float[Array, "ntheta nzeta"]:
-        g = jnp.fft.fft(f, axis=0)
-        k = jnp.fft.fftfreq(self.ntheta, 1 / self.ntheta)
-        df = jnp.fft.ifft(1j * k[:, None] * g, axis=0)
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore")
-            return df.astype(f.dtype)
+        if self.deriv_mode == "fft":
+            g = jnp.fft.fft(f, axis=0)
+            k = jnp.fft.fftfreq(self.ntheta, 1 / self.ntheta)
+            df = jnp.fft.ifft(1j * k[:, None] * g, axis=0)
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                return df.astype(f.dtype)
+        else:
+            coeffs = {
+                "fd2": jnp.array([-1 / 2, 0, 1 / 2]),
+                "fd4": jnp.array([1 / 12, -2 / 3, 0, 2 / 3, -1 / 12]),
+                "fd6": jnp.array([-1 / 60, 3 / 20, -3 / 4, 0, 3 / 4, -3 / 20, 1 / 60]),
+            }
+            d = coeffs[self.deriv_mode] * 2 * np.pi / self.ntheta
+            m = len(d)
+            f = jnp.concatenate([f[-m:], f, f[:m]], axis=0)
+            df = jnp.convolve(f, d[::-1], "same", axis=0)
+            return df[m:-m]
 
     @functools.partial(jnp.vectorize, signature="(m,n)->(m,n)", excluded=[0])
     def _dfdz(self, f: Float[Array, "ntheta nzeta"]) -> Float[Array, "ntheta nzeta"]:
-        g = jnp.fft.fft(f, axis=1)
-        k = jnp.fft.fftfreq(self.nzeta, 1 / self.nzeta) * self.NFP
-        df = jnp.fft.ifft(1j * k[None, :] * g, axis=1)
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore")
-            return df.astype(f.dtype)
+        if self.deriv_mode == "fft":
+            g = jnp.fft.fft(f, axis=1)
+            k = jnp.fft.fftfreq(self.nzeta, 1 / self.nzeta) * self.NFP
+            df = jnp.fft.ifft(1j * k[None, :] * g, axis=1)
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                return df.astype(f.dtype)
+        else:
+            coeffs = {
+                "fd2": jnp.array([-1 / 2, 0, 1 / 2]),
+                "fd4": jnp.array([1 / 12, -2 / 3, 0, 2 / 3, -1 / 12]),
+                "fd6": jnp.array([-1 / 60, 3 / 20, -3 / 4, 0, 3 / 4, -3 / 20, 1 / 60]),
+            }
+            d = coeffs[self.deriv_mode] * 2 * np.pi / self.nzeta / self.NFP
+            m = len(d)
+            f = jnp.concatenate([f[:, -m:], f, f[:, :m]], axis=1)
+            df = jnp.convolve(f, d[::-1], "same", axis=1)
+            return df[:, m:-m]
 
     def resample(self, ntheta: int, nzeta: int):
         """Resample field to a higher resolution."""
@@ -265,20 +336,19 @@ class Field(eqx.Module):
             return self
 
         keys = [
-            "B_sup_p",
             "B_sup_t",
             "B_sup_z",
-            "B_sub_p",
             "B_sub_t",
             "B_sub_z",
             "sqrtg",
             "Bmag",
-            "bdotgradB",
         ]
         out = {}
         for key in keys:
             out[key] = interpax.fft_interp2d(getattr(self, key), ntheta, nzeta)
-        return Field(self.rho, **out)
+        return Field(
+            self.rho, **out, psi_r=self.psi_r, NFP=self.NFP, deriv_mode=self.deriv_mode
+        )
 
 
 # TODO: make this a lineax.LinearOperator
