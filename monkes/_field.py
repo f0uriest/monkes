@@ -224,14 +224,15 @@ class Field(eqx.Module):
         from netCDF4 import Dataset
 
         file = Dataset(booz, mode="r")
+        assert not bool(
+            file.variables["lasym__logical__"][:].filled()
+        ), "non-symmetric booz-xform not supported"
 
         ns = file.variables["ns_b"][:].filled()
         nfp = file.variables["nfp_b"][:].filled()
 
         theta = jnp.linspace(0, 2 * np.pi, ntheta, endpoint=False)
         zeta = jnp.linspace(0, 2 * np.pi / nfp, nzeta, endpoint=False)
-
-        assert "bmns" not in file.variables, "non-symmetric booz-xform not supported"
 
         s_full = jnp.linspace(0, 1, ns)
         hs = 1 / (ns - 1)
