@@ -75,7 +75,9 @@ class Field(eqx.Module):
         psi_r: float,
         NFP: int = 1,
         *,
-        deriv_mode: str = "fft"
+        deriv_mode: str = "fft",
+        dBdt=None,
+        dBdz=None,
     ):
         assert deriv_mode in ["fft", "fd2", "fd4", "fd6"]
         self.deriv_mode = deriv_mode
@@ -95,9 +97,11 @@ class Field(eqx.Module):
         self.B_sub_z = B_sub_z
         self.sqrtg = sqrtg
         self.Bmag = Bmag
-        self.bdotgradB = (
-            B_sup_t * self._dfdt(self.Bmag) + B_sup_z * self._dfdz(self.Bmag)
-        ) / self.Bmag
+        if dBdt is None:
+            dBdt = self._dfdt(self.Bmag)
+        if dBdz is None:
+            dBdz = self._dfdz(self.Bmag)
+        self.bdotgradB = (B_sup_t * dBdt + B_sup_z * dBdz) / self.Bmag
         self.Bmag_fsa = self.flux_surface_average(self.Bmag)
         self.B2mag_fsa = self.flux_surface_average(self.Bmag**2)
         self.psi_r = psi_r
@@ -137,6 +141,8 @@ class Field(eqx.Module):
             "B_theta",
             "B_zeta",
             "|B|",
+            "|B|_t",
+            "|B|_z",
             "sqrt(g)",
             "psi_r",
             "a",
@@ -149,6 +155,8 @@ class Field(eqx.Module):
             "B_sub_t": desc_data["B_theta"],
             "B_sub_z": desc_data["B_zeta"],
             "Bmag": desc_data["|B|"],
+            "dBdt": desc_data["|B|_t"],
+            "dBdz": desc_data["|B|_z"],
             "sqrtg": desc_data["sqrt(g)"] / desc_data["psi_r"],
         }
 
@@ -161,7 +169,7 @@ class Field(eqx.Module):
             psi_r=desc_data["psi_r"][0] / desc_data["a"],
             **data,
             NFP=eq.NFP,
-            deriv_mode=deriv_mode
+            deriv_mode=deriv_mode,
         )
 
     @classmethod
@@ -255,11 +263,15 @@ class Field(eqx.Module):
 
         sqrtg = vmec_eval(theta[:, None], zeta[None, :], g_mnc * mask, 0, xm, xn)
         Bmag = vmec_eval(theta[:, None], zeta[None, :], b_mnc * mask, 0, xm, xn)
+        dBdt = vmec_eval(theta[:, None], zeta[None, :], b_mnc * mask, 0, xm, xn, dt=1)
+        dBdz = vmec_eval(theta[:, None], zeta[None, :], b_mnc * mask, 0, xm, xn, dz=1)
 
         a_minor = R0 / aspect
         data = {}
         data["sqrtg"] = sqrtg
         data["Bmag"] = Bmag
+        data["dBdt"] = dBdt
+        data["dBdz"] = dBdz
         data["B_sub_t"] = buco * jnp.ones((ntheta, nzeta))
         data["B_sub_z"] = bvco * jnp.ones((ntheta, nzeta))
         data["B_sup_t"] = iota / sqrtg
@@ -471,7 +483,7 @@ class MonoenergeticDKOperator(eqx.Module):
         )
 
 
-def vmec_eval(t, z, xc, xs, m, n):
+def vmec_eval(t, z, xc, xs, m, n, dt=0, dz=0):
     """Evaluate a vmec style double-fourier series.
 
     eg sum_mn xc*cos(m*t-n*z) + xs*sin(m*t-n*z)
@@ -490,13 +502,20 @@ def vmec_eval(t, z, xc, xs, m, n):
     x : float, jax.Array
         Evaluated quantity at t, z.
     """
-    xc, xs, m, n = jnp.atleast_1d(xc, xs, m, n)
-    xc, xs, m, n = jnp.broadcast_arrays(xc, xs, m, n)
-    return _vmec_eval(t, z, xc, xs, m, n)
+    xc, xs, m, n, dt, dz = jnp.atleast_1d(xc, xs, m, n, dt, dz)
+    xc, xs, m, n, dt, dz = jnp.broadcast_arrays(xc, xs, m, n, dt, dz)
+    return _vmec_eval(t, z, xc, xs, m, n, dt, dz)
 
 
-@functools.partial(jnp.vectorize, signature="(),(),(n),(n),(n),(n)->()")
-def _vmec_eval(t, z, xc, xs, m, n):
-    c = (xc * jnp.cos(m * t - n * z)).sum()
-    s = (xs * jnp.sin(m * t - n * z)).sum()
+@functools.partial(jnp.vectorize, signature="(),(),(n),(n),(n),(n),(n),(n)->()")
+def _vmec_eval(t, z, xc, xs, m, n, dt, dz):
+    arg = m * t + n * z
+    arg += dt * jnp.pi / 2
+    arg += dz * jnp.pi / 2
+    xc *= m**dt
+    xc *= n**dz
+    xs *= m**dt
+    xs *= n**dz
+    c = (xc * jnp.cos(arg)).sum()
+    s = (xs * jnp.sin(arg)).sum()
     return c + s
