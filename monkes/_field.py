@@ -235,11 +235,8 @@ class Field(eqx.Module):
         zeta = jnp.linspace(0, 2 * np.pi / nfp, nzeta, endpoint=False)
 
         s_full = jnp.linspace(0, 1, ns)
-        hs = 1 / (ns - 1)
-        s_half = s_full[0:-1] + hs / 2
 
         aspect = file.variables["aspect_b"][:].filled()
-        g_mnc = file.variables["gmn_b"][:].filled()
         b_mnc = file.variables["bmnc_b"][:].filled()
         r_mnc = file.variables["rmnc_b"][:].filled()
         nfp = file.variables["nfp_b"][:].filled()
@@ -248,13 +245,16 @@ class Field(eqx.Module):
         buco = file.variables["buco_b"][:].filled()  # (AKA Boozer I)
         bvco = file.variables["bvco_b"][:].filled()  # (AKA Boozer G)
 
+        # copied from fortran monkes, need to understand this
+        R0 = r_mnc[1, 0]
+        a_minor = R0 / aspect
+
         # assuming the field is only over a single flux surface s
-        g_mnc = interpax.interp1d(s, s_half, g_mnc)
-        b_mnc = interpax.interp1d(s, s_half, b_mnc)
-        R0 = interpax.interp1d(s, s_half, r_mnc[:, 0])
-        buco = interpax.interp1d(s, s_full, buco)
+        # bmnc on full mesh? this seems to agree with fortran
+        b_mnc = interpax.interp1d(s, s_full[1:], b_mnc)
+        buco = -interpax.interp1d(s, s_full, buco)  # sign flip LH -> RH
         bvco = interpax.interp1d(s, s_full, bvco)
-        iota = interpax.interp1d(s, s_full, iota)
+        iota = -interpax.interp1d(s, s_full, iota)  # sign flip LH -> RH
         psi_s = interpax.interp1d(s, s_full, psi_s)
 
         xm = file.variables["ixm_b"][:].filled()
@@ -262,12 +262,14 @@ class Field(eqx.Module):
 
         mask = jnp.abs(b_mnc) > cutoff * jnp.abs(b_mnc).max()
 
-        sqrtg = vmec_eval(theta[:, None], zeta[None, :], g_mnc * mask, 0, xm, xn)
         Bmag = vmec_eval(theta[:, None], zeta[None, :], b_mnc * mask, 0, xm, xn)
         dBdt = vmec_eval(theta[:, None], zeta[None, :], b_mnc * mask, 0, xm, xn, dt=1)
         dBdz = vmec_eval(theta[:, None], zeta[None, :], b_mnc * mask, 0, xm, xn, dz=1)
 
-        a_minor = R0 / aspect
+        sign = jnp.sign(bvco + iota * buco)
+        buco *= sign
+        bvco *= sign
+        sqrtg = (bvco + iota * buco) / Bmag**2
         data = {}
         data["sqrtg"] = sqrtg
         data["Bmag"] = Bmag
