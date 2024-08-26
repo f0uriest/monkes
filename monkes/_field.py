@@ -55,9 +55,13 @@ class Field(eqx.Module):
     sqrtg: Float[Array, "ntheta nzeta"]
     Bmag: Float[Array, "ntheta nzeta"]
     bdotgradB: Float[Array, "ntheta nzeta"]
+    BxgradpsidotgradB: Float[Array, "ntheta nzeta"]
+    dBdt: Float[Array, "ntheta nzeta"]
+    dBdz: Float[Array, "ntheta nzeta"]
     Bmag_fsa: float
     B2mag_fsa: float
     psi_r: float
+    B0: float
     ntheta: int = eqx.field(static=True)
     nzeta: int = eqx.field(static=True)
     NFP: int = eqx.field(static=True)
@@ -78,6 +82,7 @@ class Field(eqx.Module):
         deriv_mode: str = "fft",
         dBdt=None,
         dBdz=None,
+        B0=None,
     ):
         assert deriv_mode in ["fft", "fd2", "fd4", "fd6"]
         self.deriv_mode = deriv_mode
@@ -101,7 +106,13 @@ class Field(eqx.Module):
             dBdt = self._dfdt(self.Bmag)
         if dBdz is None:
             dBdz = self._dfdz(self.Bmag)
+        self.dBdt = dBdt
+        self.dBdz = dBdz
+        if B0 is None:
+            B0 = Bmag.mean()
+        self.B0 = B0
         self.bdotgradB = (B_sup_t * dBdt + B_sup_z * dBdz) / self.Bmag
+        self.BxgradpsidotgradB = (B_sub_z * dBdt - B_sub_t * dBdz) / sqrtg
         self.Bmag_fsa = self.flux_surface_average(self.Bmag)
         self.B2mag_fsa = self.flux_surface_average(self.Bmag**2)
         self.psi_r = psi_r
@@ -260,7 +271,8 @@ class Field(eqx.Module):
         xm = file.variables["ixm_b"][:].filled()
         xn = file.variables["ixn_b"][:].filled()
 
-        mask = jnp.abs(b_mnc) > cutoff * jnp.abs(b_mnc).max()
+        B0 = jnp.abs(b_mnc).max()
+        mask = jnp.abs(b_mnc) > cutoff * B0
 
         Bmag = vmec_eval(theta[:, None], zeta[None, :], b_mnc * mask, 0, xm, xn)
         dBdt = vmec_eval(theta[:, None], zeta[None, :], b_mnc * mask, 0, xm, xn, dt=1)
@@ -280,6 +292,7 @@ class Field(eqx.Module):
         data["B_sup_t"] = iota / sqrtg
         data["B_sup_z"] = 1 / sqrtg
         data["psi_r"] = psi_s * 2 * jnp.sqrt(s) / a_minor
+        data["B0"] = B0
 
         return cls(rho=jnp.sqrt(s), **data, NFP=nfp, deriv_mode=deriv_mode)
 
@@ -357,12 +370,19 @@ class Field(eqx.Module):
             "B_sub_z",
             "sqrtg",
             "Bmag",
+            "dBdt",
+            "dBdz",
         ]
         out = {}
         for key in keys:
             out[key] = interpax.fft_interp2d(getattr(self, key), ntheta, nzeta)
         return Field(
-            self.rho, **out, psi_r=self.psi_r, NFP=self.NFP, deriv_mode=self.deriv_mode
+            self.rho,
+            **out,
+            psi_r=self.psi_r,
+            B0=self.B0,
+            NFP=self.NFP,
+            deriv_mode=self.deriv_mode,
         )
 
 

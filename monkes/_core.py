@@ -27,7 +27,7 @@ def _source2(field, k):
 @jit
 @functools.partial(jnp.vectorize, signature="()->(m,n)", excluded=[0])
 def _source3(field, k):
-    g = field.Bmag / field.Bmag.mean()
+    g = field.Bmag / field.B0
     prefactor = jnp.where(k == 1, 1, 0)
     out = prefactor * g
     return jnp.where(k == 0, out.at[0, 0].set(0.0), out)
@@ -60,9 +60,9 @@ def compute_monoenergetic_coefficients(f, s, field):
     D21 = D11
     D22 = D11
     D23 = D13
-    D31 = 2 / 3 * field.flux_surface_average(field.Bmag / field.Bmag.mean() * f[0, 1])
+    D31 = 2 / 3 * field.flux_surface_average(field.Bmag / field.B0 * f[0, 1])
     D32 = D31
-    D33 = 2 / 3 * field.flux_surface_average(field.Bmag / field.Bmag.mean() * f[2, 1])
+    D33 = 2 / 3 * field.flux_surface_average(field.Bmag / field.B0 * f[2, 1])
     Dij = jnp.array([[D11, D12, D13], [D21, D22, D23], [D31, D32, D33]])
 
     return Dij.squeeze()
