@@ -12,7 +12,7 @@ from ._species import collisionality
 @jit
 @functools.partial(jnp.vectorize, signature="()->(m,n)", excluded=[0])
 def _source1(field, k):
-    g = field.Bxgradpsidotgrad(field.Bmag) / (2 * field.Bmag**3)
+    g = field.BxgradpsidotgradB / (2 * field.Bmag**3)
     prefactor = jnp.where(k == 0, 4 / 3, jnp.where(k == 2, 2 / 3, 0))
     out = prefactor * g
     return jnp.where(k == 0, out.at[0, 0].set(0.0), out)
