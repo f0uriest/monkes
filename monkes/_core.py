@@ -5,7 +5,11 @@ import jax.numpy as jnp
 from jax import jit
 
 from ._field import MonoenergeticDKOperator
-from ._linalg import block_tridiagonal_factor, block_tridiagonal_solve
+from ._linalg import (
+    block_tridiagonal_factor,
+    block_tridiagonal_solve,
+    block_tridiagonal_solve_lazy,
+)
 from ._species import collisionality
 
 
@@ -68,16 +72,30 @@ def compute_monoenergetic_coefficients(f, s, field):
     return Dij.squeeze()
 
 
-@functools.partial(jax.jit, static_argnames=("nl",))
-def monoenergetic_dke_solve_internal(field, nl, Erhat, nuhat):
+@functools.partial(jax.jit, static_argnames=("nl", "lazy"))
+def monoenergetic_dke_solve_internal(field, nl, Erhat, nuhat, lazy=False):
     """Solve MDKE with normalized inputs."""
     operator = MonoenergeticDKOperator(field, nl, Erhat, nuhat)
     s = sources(field, nl)
 
-    Clu = block_tridiagonal_factor(operator.D, operator.L, operator.U, reverse=True)
+    if lazy:
 
-    def _solve(vec):
-        return block_tridiagonal_solve(Clu, vec)
+        def _solve(vec):
+            return block_tridiagonal_solve_lazy(
+                operator.get_Dkmat, operator.get_Lkmat, operator.get_Ukmat, vec, nl
+            )
+
+    else:
+        k = jnp.arange(nl)
+        Clu = block_tridiagonal_factor(
+            operator.get_Dkmat(k),
+            operator.get_Lkmat(k[1:]),
+            operator.get_Ukmat(k[:-1]),
+            reverse=True,
+        )
+
+        def _solve(vec):
+            return block_tridiagonal_solve(Clu, vec)
 
     f = jax.vmap(_solve)(s)
 

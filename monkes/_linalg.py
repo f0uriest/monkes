@@ -116,3 +116,76 @@ def block_tridiag_mv(D, L, U, x):
     b = jnp.einsum("ijk,ik -> ij", D, v[:, :]).flatten()
     c = jnp.einsum("ijk,ik -> ij", L, v[:-1, :]).flatten()
     return b.at[:-N].add(a).at[N:].add(c)
+
+
+def block_tridiagonal_solve_lazy(
+    diagonal, lower_diagonal, upper_diagonal, vector, kmax
+):
+    """Solve a block tridiagonal system using limited memory.
+
+    Parameters
+    ----------
+    diagonal : callable
+        Function to calculate main diagonal block for given k, signature ()->(N,N)
+    lower_diagonal, callable
+        Functions to calculate lower and upper diagonal blocks for given k,
+        signature ()->(N,N)
+    vector : jax.Array, shape(K*N)
+        RHS vector to solve against.
+
+    Returns
+    -------
+    x : jax.Array, shape(K*N)
+        Solution vector.
+    """
+
+    def factor_scan(carry, _):
+        k, Deltainv_kp1 = carry
+        Lkp1 = lower_diagonal(k + 1)
+        Uk = upper_diagonal(k)
+
+        DeltainvLkp1 = jax.scipy.linalg.lu_solve(Deltainv_kp1, Lkp1)
+        Delta_k = diagonal(k) - Uk @ DeltainvLkp1
+        Deltainv_k = jax.scipy.linalg.lu_factor(Delta_k)
+        return (k - 1, Deltainv_k), (Deltainv_k,)
+
+    Deltainv_kmax = jax.scipy.linalg.lu_factor(diagonal(kmax - 1))
+    init_thomas = (kmax - 2, Deltainv_kmax)
+    (k, _), (Deltainv,) = jax.lax.scan(
+        factor_scan, init_thomas, None, length=kmax - 1, reverse=True
+    )
+    Deltainv = (
+        jnp.concatenate([Deltainv[0], Deltainv_kmax[0][None]]),
+        jnp.concatenate([Deltainv[1], Deltainv_kmax[1][None]]),
+    )
+
+    block_size = Deltainv[0].shape[1]
+    size = Deltainv[0].shape[0]
+
+    s = jnp.asarray(vector).reshape(size, block_size)
+
+    def forwardsub(carry, Deltinv):
+        k, sigma_kp1 = carry
+        sk = s[k]
+        Uk = upper_diagonal(k)
+        Deltinv_sigma = jax.scipy.linalg.lu_solve(Deltinv, sigma_kp1)
+        sigma_k = sk - Uk @ Deltinv_sigma
+        return (k - 1, sigma_k), (sigma_k,)
+
+    sigma_kp1 = s[-1]
+    init_forward = (size - 2, sigma_kp1)
+    (k, _), (sigma,) = jax.lax.scan(
+        forwardsub, init_forward, (Deltainv[0][1:], Deltainv[1][1:]), reverse=True
+    )
+    sigma = jnp.concatenate([sigma, sigma_kp1[None]])
+
+    def backsub(carry, Deltinv_sigma):
+        k, f_km1 = carry
+        Deltainvk, sigmak = Deltinv_sigma
+        L = lower_diagonal(k)
+        fk = jax.scipy.linalg.lu_solve(Deltainvk, (sigmak - L @ f_km1))
+        return (k + 1, fk), fk
+
+    init_backsub = (0, jnp.zeros(block_size))
+    (k, _), f = jax.lax.scan(backsub, init_backsub, (Deltainv, sigma))
+    return f.flatten()

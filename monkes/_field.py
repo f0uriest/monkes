@@ -403,32 +403,27 @@ class MonoenergeticDKOperator(eqx.Module):
     """
 
     field: Field
-    nl: int
+    nl: int = eqx.field(static=True)
     Erhat: float
     nuhat: float
-    D: jax.Array
-    L: jax.Array
-    U: jax.Array
-    shape: tuple
+    shape: tuple = eqx.field(static=True)
 
     def __init__(self, field, nl, Erhat, nuhat):
         self.field = field
         self.Erhat = Erhat
         self.nuhat = nuhat
         self.nl = nl
-        k = np.arange(nl)
-        self.L = self._get_Lkmat(k[1:])
-        self.D = self._get_Dkmat(k)
-        self.U = self._get_Ukmat(k[:-1])
         self.shape = (nl * field.ntheta * field.nzeta, nl * field.ntheta * field.nzeta)
 
+    @jit
     def mv(self, x):
         """Matrix vector product."""
-        size, N, M = jnp.shape(self.D)
-        v = x.reshape(size, N)
-        a = jnp.einsum("ijk,ik -> ij", self.U, v[1:, :]).flatten()
-        b = jnp.einsum("ijk,ik -> ij", self.D, v[:, :]).flatten()
-        c = jnp.einsum("ijk,ik -> ij", self.L, v[:-1, :]).flatten()
+        x = x.reshape((self.nl, self.field.ntheta, self.field.nzeta))
+        k = jnp.arange(self.nl)
+        N = self.field.ntheta * self.field.nzeta
+        a = self._Uk(x[1:], k[:-1]).flatten()
+        b = self._Dk(x[:], k[:]).flatten()
+        c = self._Lk(x[:-1], k[1:]).flatten()
         return b.at[:-N].add(a).at[N:].add(c)
 
     def _maybe_flatten(self, op, f, k):
@@ -443,7 +438,7 @@ class MonoenergeticDKOperator(eqx.Module):
 
     @jit
     @functools.partial(jnp.vectorize, signature="()->(n,n)", excluded=[0])
-    def _get_Lkmat(self, k):
+    def get_Lkmat(self, k):
         f = np.zeros(self.field.ntheta * self.field.nzeta)
 
         def Lk(f, k):
@@ -453,25 +448,23 @@ class MonoenergeticDKOperator(eqx.Module):
 
     @jit
     @functools.partial(jnp.vectorize, signature="()->(n,n)", excluded=[0])
-    def _get_Dkmat(self, k):
+    def get_Dkmat(self, k):
         f = np.zeros(self.field.ntheta * self.field.nzeta)
 
         def Dk(f, k):
             return self._maybe_flatten(self._Dk, f, k)
 
-        D = jax.jacfwd(Dk)(f, k)
-        return jnp.where(k == 0, D.at[0, :].set(0.0).at[0, 0].set(1.0), D)
+        return jax.jacfwd(Dk)(f, k)
 
     @jit
     @functools.partial(jnp.vectorize, signature="()->(n,n)", excluded=[0])
-    def _get_Ukmat(self, k):
+    def get_Ukmat(self, k):
         f = np.zeros(self.field.ntheta * self.field.nzeta)
 
         def Uk(f, k):
             return self._maybe_flatten(self._Uk, f, k)
 
-        U = jax.jacfwd(Uk)(f, k)
-        return jnp.where(k == 0, U.at[0, :].set(0.0), U)
+        return jax.jacfwd(Uk)(f, k)
 
     @functools.partial(jnp.vectorize, signature="(m,n),()->(m,n)", excluded=[0])
     def _Lk(self, f, k):
@@ -486,17 +479,19 @@ class MonoenergeticDKOperator(eqx.Module):
 
     @functools.partial(jnp.vectorize, signature="(m,n),()->(m,n)", excluded=[0])
     def _Dk(self, f, k):
-        return (
+
+        Df = (
             -self.Erhat
             / self.field.psi_r
             / self.field.B2mag_fsa
             * self.field.Bxgradpsidotgrad(f)
             + k * (k + 1) / 2 * self.nuhat * f
         )
+        return jnp.where(k == 0, Df.at[0, 0].set(f[0, 0]), Df)
 
     @functools.partial(jnp.vectorize, signature="(m,n),()->(m,n)", excluded=[0])
     def _Uk(self, f, k):
-        return (
+        Uf = (
             (k + 1)
             / (2 * k + 3)
             * (
@@ -504,6 +499,7 @@ class MonoenergeticDKOperator(eqx.Module):
                 - (k + 2) / 2 * self.field.bdotgradB * f / self.field.Bmag
             )
         )
+        return jnp.where(k == 0, Uf.at[0, 0].set(0.0), Uf)
 
 
 def vmec_eval(t, z, xc, xs, m, n, dt=0, dz=0):
