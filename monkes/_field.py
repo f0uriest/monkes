@@ -331,10 +331,11 @@ class Field(eqx.Module):
                 "fd4": jnp.array([1 / 12, -2 / 3, 0, 2 / 3, -1 / 12]),
                 "fd6": jnp.array([-1 / 60, 3 / 20, -3 / 4, 0, 3 / 4, -3 / 20, 1 / 60]),
             }
-            d = coeffs[self.deriv_mode] * 2 * np.pi / self.ntheta
+            d = coeffs[self.deriv_mode] / (2 * np.pi / self.ntheta)
             m = len(d)
             f = jnp.concatenate([f[-m:], f, f[:m]], axis=0)
-            df = jnp.convolve(f, d[::-1], "same", axis=0)
+            convolve = lambda x: jnp.convolve(x, d[::-1], "same")
+            df = jax.vmap(convolve)(f.T).T
             return df[m:-m]
 
     @functools.partial(jnp.vectorize, signature="(m,n)->(m,n)", excluded=[0])
@@ -352,10 +353,11 @@ class Field(eqx.Module):
                 "fd4": jnp.array([1 / 12, -2 / 3, 0, 2 / 3, -1 / 12]),
                 "fd6": jnp.array([-1 / 60, 3 / 20, -3 / 4, 0, 3 / 4, -3 / 20, 1 / 60]),
             }
-            d = coeffs[self.deriv_mode] * 2 * np.pi / self.nzeta / self.NFP
+            d = coeffs[self.deriv_mode] / (2 * np.pi / self.nzeta / self.NFP)
             m = len(d)
             f = jnp.concatenate([f[:, -m:], f, f[:, :m]], axis=1)
-            df = jnp.convolve(f, d[::-1], "same", axis=1)
+            convolve = lambda x: jnp.convolve(x, d[::-1], "same")
+            df = jax.vmap(convolve)(f)
             return df[:, m:-m]
 
     def resample(self, ntheta: int, nzeta: int):
