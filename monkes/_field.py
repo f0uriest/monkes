@@ -245,7 +245,14 @@ class Field(eqx.Module):
         )
 
     @classmethod
-    def from_vmec(cls, vmec, s: float, ntheta: int, nzeta: int):
+    def from_vmec(cls,
+        vmec,
+        s: float,
+        ntheta: int,
+        nzeta: int,
+        cutoff: float = 0.0,
+        deriv_mode: str = "fft",
+    ):
         """Construct Field from BOOZ_XFORM file.
 
         Parameters
@@ -290,7 +297,7 @@ class Field(eqx.Module):
         #print(g_mnc[0,:])
         #print(g_mnc[1,:])
         nfp = file.variables["nfp"][:].filled()
-        #iota = file.variables["iota"][:].filled()
+        iota = file.variables["iotaf"][:].filled()
         psi_s = file.variables["phi"][:].filled()
         phi = file.variables["phi"][:].filled()
         #psi_s=psi_s/psi_s[-1]
@@ -303,12 +310,13 @@ class Field(eqx.Module):
         bsupv_mnc = interpax.interp1d(s, s_half, bsupv_mnc[1:,:])
         bsubu_mnc = interpax.interp1d(s, s_half, bsubu_mnc[1:,:])
         bsubv_mnc = interpax.interp1d(s, s_half, bsubv_mnc[1:,:])
+        iota = -interpax.interp1d(s, s_full, iota)  # Not necessary but to match boozer we need it here
 
-        psi_s = interpax.interp1d(s, s_full, psi_s)
+        psi_s = interpax.interp1d(s, s_full, psi_s) # Not necessary? but to match boozer we need it here
 
         #xm = file.variables["xm"][:].filled()
         #xn = file.variables["xn"][:].filled()
-        xm = file.variables["xm_nyq"][:].filled()
+        xm = file.variables["xm_nyq"][:].filled()  
         xn = file.variables["xn_nyq"][:].filled()  
 
         sqrtg = vmec_eval(theta[:, None], zeta[None, :], g_mnc, 0, xm, xn)
@@ -318,20 +326,35 @@ class Field(eqx.Module):
         B_sup_t = vmec_eval(theta[:, None], zeta[None, :], bsupu_mnc, 0, xm, xn)
         B_sup_z = vmec_eval(theta[:, None], zeta[None, :], bsupv_mnc, 0, xm, xn)    
 
+        #Copied from recent booz_xform reader changes but need to understand
+        B0 = jnp.abs(b_mnc).max()
+        mask = jnp.abs(b_mnc) > cutoff * B0
+
+        dBdt = vmec_eval(theta[:, None], zeta[None, :], b_mnc * mask, 0, xm, xn, dt=1)
+        dBdz = vmec_eval(theta[:, None], zeta[None, :], b_mnc * mask, 0, xm, xn, dz=1)
+
+
         #print(B_sub_t)
         #a_minor = R0 / aspect
         #a_minor=2.01879
         data = {}
         data["sqrtg"] = sqrtg#*phi[-1]
         data["Bmag"] = Bmag
+        data["dBdt"] = dBdt
+        data["dBdz"] = dBdz
         data["B_sub_t"] = B_sub_t
         data["B_sub_z"] = B_sub_z
         data["B_sup_t"] = B_sup_t
         data["B_sup_z"] = B_sup_z
         data["psi_r"] = 1.#phi[-1] * 2 * jnp.sqrt(s) / a_minor
+        data["iota"] = iota
+        data["B0"] = B0
 
 
-        return cls(rho=jnp.sqrt(s), **data, NFP=nfp)
+
+
+
+        return cls(rho=jnp.sqrt(s), **data, NFP=nfp, deriv_mode=deriv_mode)
 
     @classmethod
     def from_booz_xform(
