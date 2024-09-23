@@ -119,7 +119,7 @@ class Field(eqx.Module):
         self.theta = jnp.linspace(0, 2 * np.pi, self.ntheta, endpoint=False)
         self.zeta = jnp.linspace(0, 2 * np.pi / NFP, self.nzeta, endpoint=False)
         self.wtheta = jnp.diff(self.theta, append=jnp.array([2 * jnp.pi]))
-        self.wzeta = jnp.diff(self.theta, append=jnp.array([2 * jnp.pi / NFP]))
+        self.wzeta = jnp.diff(self.zeta, append=jnp.array([2 * jnp.pi / NFP]))
 
     @classmethod
     def from_desc(
@@ -274,9 +274,9 @@ class Field(eqx.Module):
         B0 = jnp.abs(b_mnc).max()
         mask = jnp.abs(b_mnc) > cutoff * B0
 
-        Bmag = vmec_eval(theta[:, None], zeta[None, :], b_mnc * mask, 0, xm, xn)
-        dBdt = vmec_eval(theta[:, None], zeta[None, :], b_mnc * mask, 0, xm, xn, dt=1)
-        dBdz = vmec_eval(theta[:, None], zeta[None, :], b_mnc * mask, 0, xm, xn, dz=1)
+        Bmag = vmec_eval(theta[:, None], zeta[None, :], b_mnc * mask, 0, xm, -xn)
+        dBdt = vmec_eval(theta[:, None], zeta[None, :], b_mnc * mask, 0, xm, -xn, dt=1)
+        dBdz = vmec_eval(theta[:, None], zeta[None, :], b_mnc * mask, 0, xm, -xn, dz=1)
 
         sign = jnp.sign(bvco + iota * buco)
         buco *= sign
@@ -530,9 +530,9 @@ def vmec_eval(t, z, xc, xs, m, n, dt=0, dz=0):
 
 @functools.partial(jnp.vectorize, signature="(),(),(n),(n),(n),(n),(n),(n)->()")
 def _vmec_eval(t, z, xc, xs, m, n, dt, dz):
-    arg = m * t + n * z
+    arg = m * t - n * z
     arg += dt * jnp.pi / 2
-    arg += dz * jnp.pi / 2
+    arg -= dz * jnp.pi / 2
     xc *= m**dt
     xc *= n**dz
     xs *= m**dt
