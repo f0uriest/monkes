@@ -61,6 +61,7 @@ class Field(eqx.Module):
     Bmag_fsa: float
     B2mag_fsa: float
     psi_r: float
+    iota: float
     B0: float
     ntheta: int = eqx.field(static=True)
     nzeta: int = eqx.field(static=True)
@@ -77,6 +78,7 @@ class Field(eqx.Module):
         Bmag: Float[Array, "ntheta nzeta"],
         sqrtg: Float[Array, "ntheta nzeta"],
         psi_r: float,
+        iota: float,
         NFP: int = 1,
         *,
         deriv_mode: str = "fft",
@@ -116,6 +118,7 @@ class Field(eqx.Module):
         self.Bmag_fsa = self.flux_surface_average(self.Bmag)
         self.B2mag_fsa = self.flux_surface_average(self.Bmag**2)
         self.psi_r = psi_r
+        self.iota = iota
         self.theta = jnp.linspace(0, 2 * np.pi, self.ntheta, endpoint=False)
         self.zeta = jnp.linspace(0, 2 * np.pi / NFP, self.nzeta, endpoint=False)
         self.wtheta = jnp.diff(self.theta, append=jnp.array([2 * jnp.pi]))
@@ -156,6 +159,7 @@ class Field(eqx.Module):
             "|B|_z",
             "sqrt(g)",
             "psi_r",
+            "iota",
             "a",
         ]
         desc_data = eq.compute(keys, grid=grid)
@@ -178,6 +182,7 @@ class Field(eqx.Module):
         return cls(
             rho=rho,
             psi_r=desc_data["psi_r"][0] / desc_data["a"],
+            iota=desc_data["iota"][0],
             **data,
             NFP=eq.NFP,
             deriv_mode=deriv_mode,
@@ -292,6 +297,7 @@ class Field(eqx.Module):
         data["B_sup_t"] = iota / sqrtg
         data["B_sup_z"] = 1 / sqrtg
         data["psi_r"] = psi_s * 2 * jnp.sqrt(s) / a_minor
+        data["iota"] = iota
         data["B0"] = B0
 
         return cls(rho=jnp.sqrt(s), **data, NFP=nfp, deriv_mode=deriv_mode)
