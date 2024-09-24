@@ -54,10 +54,10 @@ Er=17.8e+3#*(2./1.19*0.29)
 D11i=np.zeros(len(v_ion))
 D11e=np.zeros(len(v_electron))
 
-L11i_fac=ions.density(r=0.29)*2./jnp.sqrt(jnp.pi)*jnp.square(ions.species.mass/ions.species.charge)#*2.*ions.temperature(r=0.29)*1.6e-19/ions.species.mass
-L11e_fac=electrons.density(r=0.29)*2./jnp.sqrt(jnp.pi)*jnp.square(electrons.species.mass/jnp.abs(electrons.species.charge))#*2.*electrons.temperature(r=0.29)*1.6e-19/electrons.species.mass
-L11i_weight=x*x*x*v_ion*v_ion
-L11e_weight=x*x*x*v_electron*v_electron
+L11i_fac=ions.density(r=0.29)*2./jnp.sqrt(jnp.pi)*(ions.species.mass/ions.species.charge)**2*vth_ion**3
+L11e_fac=electrons.density(r=0.29)*2./jnp.sqrt(jnp.pi)*(electrons.species.mass/electrons.species.charge)**2*vth_electron**3
+L11i_weight=x*x*x*x*x
+L11e_weight=x*x*x*x*x
 
 #Calculate Dij over the x grid for ions and electrons
 for j in range(len(v_ion)):       
@@ -76,9 +76,4 @@ L11e=L11e_fac*jnp.sum(L11e_weight*xWeights*D11e)
 print('L11e',L11e)
 print('L11i',L11i)
 
-
-#file=h5.File('Dij.h5','w')
-#file['DL']=D11
-#file.close()
-#print('Ended')
 
