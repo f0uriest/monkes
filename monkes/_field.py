@@ -1,5 +1,4 @@
 import functools
-import warnings
 
 import equinox as eqx
 import interpax
@@ -67,6 +66,8 @@ class Field(eqx.Module):
     nzeta: int = eqx.field(static=True)
     NFP: int = eqx.field(static=True)
     deriv_mode: str = eqx.field(static=True)
+    Dt: Float[Array, "ntheta ntheta"]
+    Dz: Float[Array, "nzeta nzeta"]
 
     def __init__(
         self,
@@ -123,6 +124,12 @@ class Field(eqx.Module):
         self.zeta = jnp.linspace(0, 2 * np.pi / NFP, self.nzeta, endpoint=False)
         self.wtheta = jnp.diff(self.theta, append=jnp.array([2 * jnp.pi]))
         self.wzeta = jnp.diff(self.zeta, append=jnp.array([2 * jnp.pi / NFP]))
+        self.Dt = jax.jacfwd(
+            lambda x: self._dfdt(x.reshape((self.ntheta, 1))).flatten()
+        )(jnp.zeros(self.ntheta))
+        self.Dz = jax.jacfwd(
+            lambda x: self._dfdz(x.reshape((1, self.nzeta))).flatten()
+        )(jnp.zeros(self.nzeta))
 
     @classmethod
     def from_desc(
@@ -302,11 +309,12 @@ class Field(eqx.Module):
 
         return cls(rho=jnp.sqrt(s), **data, NFP=nfp, deriv_mode=deriv_mode)
 
+    @functools.partial(jnp.vectorize, signature="(m,n)->()", excluded=[0])
     def flux_surface_average(self, f: Float[Array, "ntheta nzeta"]) -> float:
         """Compute flux surface average of f."""
-        f = f.reshape((-1, self.ntheta, self.nzeta))
+        f = f.reshape((self.ntheta, self.nzeta))
         g = f * self.sqrtg
-        return g.mean(axis=(-1, -2)) / self.sqrtg.mean()
+        return g.mean() / self.sqrtg.mean()
 
     @functools.partial(jnp.vectorize, signature="(m,n)->(m,n)", excluded=[0])
     def bdotgrad(self, f: Float[Array, "ntheta nzeta"]) -> Float[Array, "ntheta nzeta"]:
@@ -328,9 +336,7 @@ class Field(eqx.Module):
             g = jnp.fft.fft(f, axis=0)
             k = jnp.fft.fftfreq(self.ntheta, 1 / self.ntheta)
             df = jnp.fft.ifft(1j * k[:, None] * g, axis=0)
-            with warnings.catch_warnings():
-                warnings.simplefilter("ignore")
-                return df.astype(f.dtype)
+            return df.real
         else:
             coeffs = {
                 "fd2": jnp.array([-1 / 2, 0, 1 / 2]),
@@ -350,9 +356,7 @@ class Field(eqx.Module):
             g = jnp.fft.fft(f, axis=1)
             k = jnp.fft.fftfreq(self.nzeta, 1 / self.nzeta) * self.NFP
             df = jnp.fft.ifft(1j * k[None, :] * g, axis=1)
-            with warnings.catch_warnings():
-                warnings.simplefilter("ignore")
-                return df.astype(f.dtype)
+            return df.real
         else:
             coeffs = {
                 "fd2": jnp.array([-1 / 2, 0, 1 / 2]),
