@@ -72,8 +72,8 @@ def compute_monoenergetic_coefficients(f, s, field):
     return Dij.squeeze()
 
 
-@functools.partial(jax.jit, static_argnames=("nl", "lazy"))
-def monoenergetic_dke_solve_internal(field, nl, Erhat, nuhat, lazy=False):
+@functools.partial(jax.jit, static_argnames=("nl", "lazy", "rescale"))
+def monoenergetic_dke_solve_internal(field, nl, Erhat, nuhat, lazy=False, rescale=True):
     """Solve MDKE with normalized inputs."""
     operator = MonoenergeticDKOperator(field, nl, Erhat, nuhat)
     s = sources(field, nl)
@@ -98,6 +98,14 @@ def monoenergetic_dke_solve_internal(field, nl, Erhat, nuhat, lazy=False):
             return block_tridiagonal_solve(Clu, vec)
 
     f = jax.vmap(_solve)(s)
+    f = f.reshape((3, nl, field.ntheta, field.nzeta))
+    s = s.reshape((3, nl, field.ntheta, field.nzeta))
+
+    if rescale:
+        # make f have mean 0. This doesn't affect the monoenergetic coeffs but is needed
+        # when comparing f to SFINCS and other codes
+        f0_fsa = field.flux_surface_average(f[:, 0])
+        f = f.at[:, 0].add(-f0_fsa[:, None, None])
 
     Dij = compute_monoenergetic_coefficients(f, s, field)
     return Dij, f, s
