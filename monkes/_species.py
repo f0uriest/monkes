@@ -58,6 +58,10 @@ class LocalMaxwellian(eqx.Module):
         Temperature of the species, in units of eV.
     density : float
         Density of the species, in units of particles/m^3.
+    dndr : float
+        Derivative of density with respect to normalized flux.
+    dTdr : float
+        Derivative of temperature with respect to normalized flux.
 
     """
 
