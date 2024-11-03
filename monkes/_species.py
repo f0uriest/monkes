@@ -250,11 +250,11 @@ def impact_parameter_perp(
         * maxwellian_b.species.mass
         / (maxwellian_a.species.mass + maxwellian_b.species.mass)
     )
-    v_th = jnp.sqrt(maxwellian_a.v_thermal * maxwellian_b.v_thermal)
+    v_tha, v_thb = maxwellian_a.v_thermal, maxwellian_b.v_thermal
     return (
         maxwellian_a.species.charge
-        * maxwellian_a.species.charge
-        / (4 * jnp.pi * epsilon_0 * m_reduced * v_th**2)
+        * maxwellian_b.species.charge
+        / (4 * jnp.pi * epsilon_0 * m_reduced * (v_tha**2 + v_thb**2))
     )
 
 
@@ -267,7 +267,7 @@ def debroglie_length(
         * maxwellian_b.species.mass
         / (maxwellian_a.species.mass + maxwellian_b.species.mass)
     )
-    v_th = jnp.sqrt(maxwellian_a.v_thermal * maxwellian_b.v_thermal)
+    v_th = jnp.sqrt(maxwellian_a.v_thermal**2 + maxwellian_b.v_thermal**2)
     return hbar / (2 * m_reduced * v_th)
 
 
