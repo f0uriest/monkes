@@ -111,11 +111,23 @@ class GlobalMaxwellian(eqx.Module):
     temperature: callable  # in units of eV
     density: callable  # in units of particles/m^3
 
+
     def v_thermal(self, r: float) -> float:
         """float: Thermal speed, in m/s at a given normalized radius r."""
         T = self.temperature(r) * JOULE_PER_EV
         v_thermal = jnp.sqrt(2 * T / self.species.mass)
         return v_thermal
+    
+    def dndr(self, r: float) -> float:
+        """float: Thermal speed, in m/s at a given normalized radius r."""        
+        outs=jax.vmap(jax.grad(self.density))(r)
+        return outs
+    
+    def dTdr(self, r: float) -> float:
+        """float: Thermal speed, in m/s at a given normalized radius r."""        
+        outs=jax.vmap(jax.grad(self.temperature))(r)
+        return outs
+
 
     def localize(self, r: float) -> LocalMaxwellian:
         """The global distribution function evaluated at a particular radius r."""
@@ -129,6 +141,8 @@ class GlobalMaxwellian(eqx.Module):
             / (jnp.sqrt(jnp.pi) * self.v_thermal(r)) ** 3
             * jnp.exp(-(v**2) / self.v_thermal(r) ** 2)
         )
+
+
 
 
 def collisionality(
