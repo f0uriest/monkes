@@ -33,6 +33,10 @@ class Field(eqx.Module):
         Coordinate jacobian determinant from (psi, theta, zeta) to (R, phi, Z).
     psi_r : float
         Derivative of toroidal flux wrt minor radius (rho*a_minor)
+    R_major : float
+        Major radius.
+    a_minor : float
+        Minor radius.
     NFP : int
         Number of field periods.
     deriv_mode : {"fft", "fd2", "fd4", "fd6"}
@@ -60,6 +64,8 @@ class Field(eqx.Module):
     Bmag_fsa: float
     B2mag_fsa: float
     psi_r: float
+    R_major: float
+    a_minor: float
     iota: float
     B0: float
     ntheta: int = eqx.field(static=True)
@@ -80,6 +86,8 @@ class Field(eqx.Module):
         sqrtg: Float[Array, "ntheta nzeta"],
         psi_r: float,
         iota: float,
+        R_major: float,
+        a_minor: float,
         NFP: int = 1,
         *,
         deriv_mode: str = "fft",
@@ -120,6 +128,8 @@ class Field(eqx.Module):
         self.B2mag_fsa = self.flux_surface_average(self.Bmag**2)
         self.psi_r = psi_r
         self.iota = iota
+        self.R_major = R_major
+        self.a_minor = a_minor
         self.theta = jnp.linspace(0, 2 * np.pi, self.ntheta, endpoint=False)
         self.zeta = jnp.linspace(0, 2 * np.pi / NFP, self.nzeta, endpoint=False)
         self.wtheta = jnp.diff(self.theta, append=jnp.array([2 * jnp.pi]))
@@ -168,6 +178,7 @@ class Field(eqx.Module):
             "psi_r",
             "iota",
             "a",
+            "R0",
         ]
         desc_data = eq.compute(keys, grid=grid)
 
@@ -190,6 +201,8 @@ class Field(eqx.Module):
             rho=rho,
             psi_r=desc_data["psi_r"][0] / desc_data["a"],
             iota=desc_data["iota"][0],
+            R_major=desc_data["R0"],
+            a_minor=desc_data["a"],
             **data,
             NFP=eq.NFP,
             deriv_mode=deriv_mode,
@@ -306,7 +319,8 @@ class Field(eqx.Module):
         data["psi_r"] = psi_s * 2 * jnp.sqrt(s) / a_minor
         data["iota"] = iota
         data["B0"] = B0
-
+        data["R_major"] = R0
+        data["a_minor"] = a_minor
         return cls(rho=jnp.sqrt(s), **data, NFP=nfp, deriv_mode=deriv_mode)
 
     @functools.partial(jnp.vectorize, signature="(m,n)->()", excluded=[0])
