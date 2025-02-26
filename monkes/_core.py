@@ -72,8 +72,10 @@ def compute_monoenergetic_coefficients(f, s, field):
     return Dij.squeeze()
 
 
-@functools.partial(jax.jit, static_argnames=("nl", "lazy", "rescale"))
-def monoenergetic_dke_solve_internal(field, nl, Erhat, nuhat, lazy=False, rescale=True):
+@functools.partial(jax.jit, static_argnames=("nl", "lazy", "rescale", "debug"))
+def monoenergetic_dke_solve_internal(
+    field, nl, Erhat, nuhat, lazy=False, rescale=True, debug=False
+):
     """Solve MDKE with normalized inputs."""
     operator = MonoenergeticDKOperator(field, nl, Erhat, nuhat)
     s = sources(field, nl)
@@ -82,7 +84,12 @@ def monoenergetic_dke_solve_internal(field, nl, Erhat, nuhat, lazy=False, rescal
 
         def _solve(vec):
             return block_tridiagonal_solve_lazy(
-                operator.get_Dkmat, operator.get_Lkmat, operator.get_Ukmat, vec, nl
+                operator.get_Dkmat,
+                operator.get_Lkmat,
+                operator.get_Ukmat,
+                vec,
+                nl,
+                debug,
             )
 
     else:
@@ -92,6 +99,7 @@ def monoenergetic_dke_solve_internal(field, nl, Erhat, nuhat, lazy=False, rescal
             operator.get_Lkmat(k[1:]),
             operator.get_Ukmat(k[:-1]),
             reverse=True,
+            debug=debug,
         )
 
         def _solve(vec):

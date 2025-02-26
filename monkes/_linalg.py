@@ -1,10 +1,14 @@
+from functools import partial
+
 import jax
 import jax.numpy as jnp
 from jax import jit
 
 
-@jit
-def block_tridiagonal_factor(diagonal, lower_diagonal, upper_diagonal, reverse=False):
+@partial(jit, static_argnames=("debug",))
+def block_tridiagonal_factor(
+    diagonal, lower_diagonal, upper_diagonal, reverse=False, debug=False
+):
     """Factor a block tridiagonal matrix for later use.
 
     Parameters
@@ -52,6 +56,8 @@ def block_tridiagonal_factor(diagonal, lower_diagonal, upper_diagonal, reverse=F
         L, U = lower_diagonal[L_index, :, :], upper_diagonal[U_index, :, :]
 
         denom = D - jnp.matmul(L, C)
+        if debug:
+            jax.debug.print("cond={x}", x=jnp.linalg.cond(denom))
         lu = jax.scipy.linalg.lu_factor(denom)
         new_C = jax.scipy.linalg.lu_solve(lu, U)
         return (step + 1, new_C), (new_C, lu)
@@ -119,7 +125,7 @@ def block_tridiag_mv(D, L, U, x):
 
 
 def block_tridiagonal_solve_lazy(
-    diagonal, lower_diagonal, upper_diagonal, vector, kmax
+    diagonal, lower_diagonal, upper_diagonal, vector, kmax, debug=False
 ):
     """Solve a block tridiagonal system using limited memory.
 
@@ -146,9 +152,13 @@ def block_tridiagonal_solve_lazy(
 
         DeltainvLkp1 = jax.scipy.linalg.lu_solve(Deltainv_kp1, Lkp1)
         Delta_k = diagonal(k) - Uk @ DeltainvLkp1
+        if debug:
+            jax.debug.print("cond={x}", x=jnp.linalg.cond(Delta_k))
         Deltainv_k = jax.scipy.linalg.lu_factor(Delta_k)
         return (k - 1, Deltainv_k), (Deltainv_k,)
 
+    if debug:
+        jax.debug.print("cond={x}", x=jnp.linalg.cond(diagonal(kmax - 1)))
     Deltainv_kmax = jax.scipy.linalg.lu_factor(diagonal(kmax - 1))
     init_thomas = (kmax - 2, Deltainv_kmax)
     (k, _), (Deltainv,) = jax.lax.scan(
