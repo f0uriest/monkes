@@ -1,6 +1,6 @@
 """monkes : Monoenergetic Kinetic Equation Solver."""
 
-from ._core import monoenergetic_dke_solve
+from ._core import solve_mdke, solve_mdke_normalized
 from ._field import Field
 from ._species import (
     Deuterium,

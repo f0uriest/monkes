@@ -79,7 +79,7 @@ def compute_monoenergetic_coefficients(f, s, field):
 @functools.partial(
     jax.jit, static_argnames=("nl", "lazy", "rescale", "debug", "nt", "nz")
 )
-def monoenergetic_dke_solve_internal(
+def solve_mdke_normalized(
     field, nuhat, Erhat, nl, nt=None, nz=None, lazy=True, rescale=True, debug=False
 ):
     """Solve MDKE with normalized inputs.
@@ -88,10 +88,10 @@ def monoenergetic_dke_solve_internal(
     ----------
     field : monkes.Field
         Magnetic field information.
-    Erhat : float
-        Normalized radial electric field, Er/v in units of V*s
     nuhat : float
         Normalized collisionality, nu/v in units of 1/m.
+    Erhat : float
+        Normalized radial electric field, Er/v in units of V*s
     nl : int
         Number of Legendre modes in pitch angle coordinates.
     nt, nz : int
@@ -164,7 +164,18 @@ def monoenergetic_dke_solve_internal(
     return Dij, f, s
 
 
-def monoenergetic_dke_solve(field, global_maxwellians, Er, v, nl, nt=None, nz=None):
+def solve_mdke(
+    field,
+    global_maxwellians,
+    Er,
+    v,
+    nl,
+    nt=None,
+    nz=None,
+    lazy=True,
+    rescale=True,
+    debug=False,
+):
     """Solve the monoenergetic drift kinetic equation.
 
     Parameters
@@ -181,6 +192,15 @@ def monoenergetic_dke_solve(field, global_maxwellians, Er, v, nl, nt=None, nz=No
         Number of Legendre modes in pitch angle coordinates.
     nt, nz : int
         Number of points on flux surface in theta, zeta. Defaults to values from field.
+    lazy : bool
+        If True, only solve for the Legendre modes required for the monoenergetic
+        coefficients. Dij will be correct, but f will only be approximate. If False,
+        may require significantly more memory.
+    rescale : bool
+        Whether to scale f to have zero flux surface average. Has no effect on the
+        monoenergetic coefficients, but may be needed for comparison with other codes.
+    debug : bool
+        If True, print some extra info.
 
     Returns
     -------
@@ -192,12 +212,8 @@ def monoenergetic_dke_solve(field, global_maxwellians, Er, v, nl, nt=None, nz=No
         Source terms (RHS of DKE)
 
     """
-    if nt is None:
-        nt = field.ntheta
-    if nz is None:
-        nz = field.nzeta
-    field = field.resample(nt, nz)
     local_maxwellians = [m.localize(field.rho) for m in global_maxwellians]
     nu = collisionality(local_maxwellians[0], v, *local_maxwellians[1:])
-
-    return monoenergetic_dke_solve_internal(field, nl, Er / v, nu / v)
+    return solve_mdke_normalized(
+        field, nu / v, Er / v, nl, nt, nz, lazy, rescale, debug
+    )

@@ -57,7 +57,7 @@ def block_tridiagonal_factor(
 
         denom = D - jnp.matmul(L, C)
         if debug:
-            jax.debug.print("cond={x}", x=jnp.linalg.cond(denom))
+            jax.debug.print("l={l:3d}  cond={x:.3e}", l=step, x=jnp.linalg.cond(denom))
         lu = jax.scipy.linalg.lu_factor(denom)
         new_C = jax.scipy.linalg.lu_solve(lu, U)
         return (step + 1, new_C), (new_C, lu)
@@ -167,7 +167,7 @@ def block_tridiagonal_solve_lazy(
         Delta_k = diagonal(k) - Uk @ DeltainvLkp1
         sigma_k = s[k] - Uk @ Deltainvskp1
         if debug:
-            jax.debug.print("cond={x}", x=jnp.linalg.cond(Delta_k))
+            jax.debug.print("l={l:3d}  cond={x:3e}", l=k, x=jnp.linalg.cond(Delta_k))
 
         Deltainv_k, pivots_k = jax.scipy.linalg.lu_factor(Delta_k)
 
@@ -187,7 +187,7 @@ def block_tridiagonal_solve_lazy(
         return (Deltainv, pivots, sigma, Deltainv_k, pivots_k, sigma_k)
 
     if debug:
-        jax.debug.print("cond={x}", x=jnp.linalg.cond(Dk))
+        jax.debug.print("l={kmax:3d}  cond={x:.3e}", kmax=kmax, x=jnp.linalg.cond(Dk))
 
     Deltainv_kp1, pivots_kp1 = jax.scipy.linalg.lu_factor(Dk)
     sigma_kp1 = s[kmax]

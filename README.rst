@@ -34,15 +34,30 @@ Basic usage:
    eq = desc.examples.get("HELIOTRON")
    field = monkes.Field.from_desc(eq, 0.5, nt, nz)
 
-   Dij, f, s = monkes.monoenergetic_dke_solve(field, species, Er=1.0, v=1e5, nl=80)
+   Dij, f, s = monkes.solve_mdke(field, species, Er=1.23, v=1e5, nl=80)
 
 This computes the monoenergetic transport coefficients ``Dij``, the
 perturbed distribution function ``f`` and the sources ``s``
 
-To Do:
-- benchmark/validate against MONKES/DKES
-- normalizations / units
-- consistent definitions of radial coordinate (rho vs s vs psi)
-- finish implementing option for full 4D equation (eg SFINCS)
-- Add utilites for performing scans over collisionality, Er
-- fix up interface to allow easier use of ``lineax`` solvers
+Alternatively, if you already know the value of normalized collisionality and
+radial electric field you want:
+
+.. code:: python
+
+   from jax import config
+   # to use higher precision
+   config.update("jax_enable_x64", True)
+
+   import monkes
+
+   nuhat = 1e-4
+   erhat = 1e-3
+
+   import desc
+   nt = 19
+   nz = 31
+   eq = desc.examples.get("HELIOTRON")
+   # see also monkes.Field.from_booz_xform
+   field = monkes.Field.from_desc(eq, 0.5, nt, nz)
+
+   Dij, f, s = monkes.solve_mdke_normalized(field, nuhat, erhat, nl=80)
