@@ -125,7 +125,7 @@ def block_tridiag_mv(D, L, U, x):
 
 
 def block_tridiagonal_solve_lazy(
-    diagonal, lower_diagonal, upper_diagonal, vector, kmax, debug=False
+    diagonal, lower_diagonal, upper_diagonal, vector, Lmax, debug=False
 ):
     """Solve a block tridiagonal system using limited memory.
 
@@ -138,64 +138,73 @@ def block_tridiagonal_solve_lazy(
         signature ()->(N,N)
     vector : jax.Array, shape(K*N)
         RHS vector to solve against.
+    Lmax : int
+        Maximum value for desired output. For monoenergetic coefficients, only needs
+        Lmax=2. For full distribution function, needs Lmax=kmax.
 
     Returns
     -------
     x : jax.Array, shape(K*N)
         Solution vector.
     """
+    block_size = jax.eval_shape(diagonal, 0).shape[0]
+    kmax = len(vector) // block_size
 
-    def factor_scan(carry, _):
-        k, Deltainv_kp1 = carry
+    Dk = diagonal(kmax - 1)
+    Deltainv = jnp.zeros((Lmax + 1, block_size, block_size))
+    pivots = jnp.zeros((Lmax + 1, block_size), dtype=jnp.int32)
+    sigma = jnp.zeros((Lmax + 1, block_size))
+    s = jnp.asarray(vector).reshape(kmax, block_size)
+
+    def factor_body(i, carry):
+        k = kmax - i
+        Deltainv, pivots, sigma, Deltainv_kp1, pivots_kp1, sigma_kp1 = carry
         Lkp1 = lower_diagonal(k + 1)
         Uk = upper_diagonal(k)
 
-        DeltainvLkp1 = jax.scipy.linalg.lu_solve(Deltainv_kp1, Lkp1)
+        DeltainvLkp1 = jax.scipy.linalg.lu_solve((Deltainv_kp1, pivots_kp1), Lkp1)
+        Deltainvskp1 = jax.scipy.linalg.lu_solve((Deltainv_kp1, pivots_kp1), sigma_kp1)
         Delta_k = diagonal(k) - Uk @ DeltainvLkp1
+        sigma_k = s[k] - Uk @ Deltainvskp1
         if debug:
             jax.debug.print("cond={x}", x=jnp.linalg.cond(Delta_k))
-        Deltainv_k = jax.scipy.linalg.lu_factor(Delta_k)
-        return (k - 1, Deltainv_k), (Deltainv_k,)
+
+        Deltainv_k, pivots_k = jax.scipy.linalg.lu_factor(Delta_k)
+
+        def kltLmax(Deltainv, pivots, sigma):
+            Deltainv = Deltainv.at[k].set(Deltainv_k)
+            pivots = pivots.at[k].set(pivots_k)
+            sigma = sigma.at[k].set(sigma_k)
+            return Deltainv, pivots, sigma
+
+        def kgtLmax(Deltainv, pivots, sigma):
+            return Deltainv, pivots, sigma
+
+        Deltainv, pivots, sigma = jax.lax.cond(
+            k <= Lmax, kltLmax, kgtLmax, Deltainv, pivots, sigma
+        )
+
+        return (Deltainv, pivots, sigma, Deltainv_k, pivots_k, sigma_k)
 
     if debug:
-        jax.debug.print("cond={x}", x=jnp.linalg.cond(diagonal(kmax - 1)))
-    Deltainv_kmax = jax.scipy.linalg.lu_factor(diagonal(kmax - 1))
-    init_thomas = (kmax - 2, Deltainv_kmax)
-    (k, _), (Deltainv,) = jax.lax.scan(
-        factor_scan, init_thomas, None, length=kmax - 1, reverse=True
+        jax.debug.print("cond={x}", x=jnp.linalg.cond(Dk))
+
+    Deltainv_kp1, pivots_kp1 = jax.scipy.linalg.lu_factor(Dk)
+    sigma_kp1 = s[kmax]
+    init_thomas = (Deltainv, pivots, sigma, Deltainv_kp1, pivots_kp1, sigma_kp1)
+
+    (Deltainv, pivots, sigma, _, _, _) = jax.lax.fori_loop(
+        2, kmax + 1, factor_body, init_thomas
     )
-    Deltainv = (
-        jnp.concatenate([Deltainv[0], Deltainv_kmax[0][None]]),
-        jnp.concatenate([Deltainv[1], Deltainv_kmax[1][None]]),
-    )
-
-    block_size = Deltainv[0].shape[1]
-    size = Deltainv[0].shape[0]
-
-    s = jnp.asarray(vector).reshape(size, block_size)
-
-    def forwardsub(carry, Deltinv):
-        k, sigma_kp1 = carry
-        sk = s[k]
-        Uk = upper_diagonal(k)
-        Deltinv_sigma = jax.scipy.linalg.lu_solve(Deltinv, sigma_kp1)
-        sigma_k = sk - Uk @ Deltinv_sigma
-        return (k - 1, sigma_k), (sigma_k,)
-
-    sigma_kp1 = s[-1]
-    init_forward = (size - 2, sigma_kp1)
-    (k, _), (sigma,) = jax.lax.scan(
-        forwardsub, init_forward, (Deltainv[0][1:], Deltainv[1][1:]), reverse=True
-    )
-    sigma = jnp.concatenate([sigma, sigma_kp1[None]])
 
     def backsub(carry, Deltinv_sigma):
         k, f_km1 = carry
-        Deltainvk, sigmak = Deltinv_sigma
+        Deltainvk, pivots, sigmak = Deltinv_sigma
         L = lower_diagonal(k)
-        fk = jax.scipy.linalg.lu_solve(Deltainvk, (sigmak - L @ f_km1))
+        fk = jax.scipy.linalg.lu_solve((Deltainvk, pivots), (sigmak - L @ f_km1))
         return (k + 1, fk), fk
 
     init_backsub = (0, jnp.zeros(block_size))
-    (k, _), f = jax.lax.scan(backsub, init_backsub, (Deltainv, sigma))
-    return f.flatten()
+    (k, _), f = jax.lax.scan(backsub, init_backsub, (Deltainv, pivots, sigma))
+    ff = jnp.zeros((kmax, block_size)).at[: Lmax + 1].set(f)
+    return ff.flatten()

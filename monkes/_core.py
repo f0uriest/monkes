@@ -76,11 +76,52 @@ def compute_monoenergetic_coefficients(f, s, field):
     return Dij.squeeze()
 
 
-@functools.partial(jax.jit, static_argnames=("nl", "lazy", "rescale", "debug"))
+@functools.partial(
+    jax.jit, static_argnames=("nl", "lazy", "rescale", "debug", "nt", "nz")
+)
 def monoenergetic_dke_solve_internal(
-    field, nl, Erhat, nuhat, lazy=False, rescale=True, debug=False
+    field, nuhat, Erhat, nl, nt=None, nz=None, lazy=True, rescale=True, debug=False
 ):
-    """Solve MDKE with normalized inputs."""
+    """Solve MDKE with normalized inputs.
+
+    Parameters
+    ----------
+    field : monkes.Field
+        Magnetic field information.
+    Erhat : float
+        Normalized radial electric field, Er/v in units of V*s
+    nuhat : float
+        Normalized collisionality, nu/v in units of 1/m.
+    nl : int
+        Number of Legendre modes in pitch angle coordinates.
+    nt, nz : int
+        Number of points on flux surface in theta, zeta. Defaults to values from field.
+    lazy : bool
+        If True, only solve for the Legendre modes required for the monoenergetic
+        coefficients. Dij will be correct, but f will only be approximate. If False,
+        may require significantly more memory.
+    rescale : bool
+        Whether to scale f to have zero flux surface average. Has no effect on the
+        monoenergetic coefficients, but may be needed for comparison with other codes.
+    debug : bool
+        If True, print some extra info.
+
+    Returns
+    -------
+    Dij : jax.Array, shape(3,3)
+        Monoenergetic coefficients.
+    f : jax.Array, shape(3, nt*nz*nl)
+        Perturbed distribution function.
+    s : jax.Array, shape(3, nt*nz*nl)
+        Source terms (RHS of DKE)
+
+    """
+    if nt is None:
+        nt = field.ntheta
+    if nz is None:
+        nz = field.nzeta
+    field = field.resample(nt, nz)
+
     operator = MonoenergeticDKOperator(field, nl, Erhat, nuhat)
     s = sources(field, nl)
 
@@ -92,7 +133,7 @@ def monoenergetic_dke_solve_internal(
                 operator.get_Lkmat,
                 operator.get_Ukmat,
                 vec,
-                nl,
+                2,
                 debug,
             )
 
