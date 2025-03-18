@@ -275,7 +275,7 @@ class Field(eqx.Module):
         aspect = file.variables["aspect_b"][:].filled()
         b_mnc = file.variables["bmnc_b"][:].filled()
         r_mnc = file.variables["rmnc_b"][:].filled()
-        nfp = file.variables["nfp_b"][:].filled()
+        nfp = int(file.variables["nfp_b"][:].filled())
         iota = file.variables["iota_b"][:].filled()
         psi_s = file.variables["phip_b"][:].filled()
         buco = file.variables["buco_b"][:].filled()  # (AKA Boozer I)
@@ -403,10 +403,13 @@ class Field(eqx.Module):
         for key in keys:
             out[key] = interpax.fft_interp2d(getattr(self, key), ntheta, nzeta)
         return Field(
-            self.rho,
+            rho=self.rho,
             **out,
             psi_r=self.psi_r,
             B0=self.B0,
+            iota=self.iota,
+            R_major=self.R_major,
+            a_minor=self.a_minor,
             NFP=self.NFP,
             deriv_mode=self.deriv_mode,
         )
