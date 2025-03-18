@@ -13,38 +13,42 @@ from ._linalg import (
 from ._species import collisionality
 
 
-@jit
-@functools.partial(jnp.vectorize, signature="()->(m,n)", excluded=[0])
-def _source1(field, k):
+@functools.partial(jit, static_argnums=(2,))
+@functools.partial(jnp.vectorize, signature="()->(m,n)", excluded=[0, 2])
+def _source1(field, k, constraint=True):
     g = field.BxgradpsidotgradB / (2 * field.Bmag**3)
     prefactor = jnp.where(k == 0, 4 / 3, jnp.where(k == 2, 2 / 3, 0))
     out = prefactor * g
-    return jnp.where(k == 0, out.at[0, 0].set(0.0), out)
+    if constraint:
+        return jnp.where(k == 0, out.at[0, 0].set(0.0), out)
+    return out
 
 
-@jit
-@functools.partial(jnp.vectorize, signature="()->(m,n)", excluded=[0])
-def _source2(field, k):
-    return _source1(field, k)
+@functools.partial(jit, static_argnums=(2,))
+@functools.partial(jnp.vectorize, signature="()->(m,n)", excluded=[0, 2])
+def _source2(field, k, constraint=True):
+    return _source1(field, k, constraint)
 
 
-@jit
-@functools.partial(jnp.vectorize, signature="()->(m,n)", excluded=[0])
-def _source3(field, k):
+@functools.partial(jit, static_argnums=(2,))
+@functools.partial(jnp.vectorize, signature="()->(m,n)", excluded=[0, 2])
+def _source3(field, k, constraint=True):
     g = field.Bmag / field.B0
     prefactor = jnp.where(k == 1, 1, 0)
     out = prefactor * g
-    return jnp.where(k == 0, out.at[0, 0].set(0.0), out)
+    if constraint:
+        return jnp.where(k == 0, out.at[0, 0].set(0.0), out)
+    return out
 
 
-def sources(field, nl):
+def sources(field, nl, constraint=True):
     """RHS source terms for monoenergetic DKE."""
     k = jnp.arange(nl)
     return jnp.array(
         [
-            _source1(field, k).flatten(),
-            _source2(field, k).flatten(),
-            _source3(field, k).flatten(),
+            _source1(field, k, constraint).flatten(),
+            _source2(field, k, constraint).flatten(),
+            _source3(field, k, constraint).flatten(),
         ]
     )
 

@@ -433,13 +433,15 @@ class MonoenergeticDKOperator(eqx.Module):
     Erhat: float
     nuhat: float
     shape: tuple = eqx.field(static=True)
+    constraint: bool = eqx.field(static=True)
 
-    def __init__(self, field, nl, Erhat, nuhat):
+    def __init__(self, field, nl, Erhat, nuhat, constraint=True):
         self.field = field
         self.Erhat = Erhat
         self.nuhat = nuhat
         self.nl = nl
         self.shape = (nl * field.ntheta * field.nzeta, nl * field.ntheta * field.nzeta)
+        self.constraint = constraint
 
     @jit
     def mv(self, x):
@@ -513,7 +515,9 @@ class MonoenergeticDKOperator(eqx.Module):
             * self.field.Bxgradpsidotgrad(f)
             + k * (k + 1) / 2 * self.nuhat * f
         )
-        return jnp.where(k == 0, Df.at[0, 0].set(f[0, 0]), Df)
+        if self.constraint:
+            return jnp.where(k == 0, Df.at[0, 0].set(f[0, 0]), Df)
+        return Df
 
     @functools.partial(jnp.vectorize, signature="(m,n),()->(m,n)", excluded=[0])
     def _Uk(self, f, k):
@@ -525,7 +529,9 @@ class MonoenergeticDKOperator(eqx.Module):
                 - (k + 2) / 2 * self.field.bdotgradB * f / self.field.Bmag
             )
         )
-        return jnp.where(k == 0, Uf.at[0, 0].set(0.0), Uf)
+        if self.constraint:
+            return jnp.where(k == 0, Uf.at[0, 0].set(0.0), Uf)
+        return Uf
 
 
 def vmec_eval(t, z, xc, xs, m, n, dt=0, dz=0):
