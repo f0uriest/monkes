@@ -270,7 +270,9 @@ class Field(eqx.Module):
         theta = jnp.linspace(0, 2 * np.pi, ntheta, endpoint=False)
         zeta = jnp.linspace(0, 2 * np.pi / nfp, nzeta, endpoint=False)
 
-        s_full = jnp.linspace(0, 1, ns)
+        s_full = np.linspace(0, 1, ns)
+        hs = 1 / (ns - 1)
+        s_half = s_full[:-1] + hs / 2
 
         aspect = file.variables["aspect_b"][:].filled()
         b_mnc = file.variables["bmnc_b"][:].filled()
@@ -285,13 +287,27 @@ class Field(eqx.Module):
         R0 = r_mnc[1, 0]
         a_minor = R0 / aspect
 
-        # assuming the field is only over a single flux surface s
-        # bmnc on full mesh? this seems to agree with fortran
-        b_mnc = interpax.interp1d(s, s_full[1:], b_mnc)
-        buco = -interpax.interp1d(s, s_full, buco)  # sign flip LH -> RH
-        bvco = interpax.interp1d(s, s_full, bvco)
-        iota = -interpax.interp1d(s, s_full, iota)  # sign flip LH -> RH
-        psi_s = interpax.interp1d(s, s_full, psi_s)
+        def _clip(y):
+            # booz_xform stores stuff on the "half grid" of length ns-1, but because
+            # the world is awful, arrays sometimes have length ns with the first entry
+            # either zero or a copy of the 2nd entry. It doesn't seem consistent either,
+            # depending on which qty it is and what version of booz_xform it is.
+            # Simsopt seems to have the 2d arrays be shape(ns-1, mn)
+            # and 1d arrays shape(ns).
+            # CIEMAT Stellopt version has everything length ns.
+            # This just clips the first bogus value if it's there.
+            if y.shape[0] == ns:
+                y = y[1:]
+            assert y.shape[0] == ns - 1
+            return y
+
+        b_mnc, buco, bvco, iota, psi_s = map(_clip, (b_mnc, buco, bvco, iota, psi_s))
+
+        b_mnc = interpax.interp1d(s, s_half, b_mnc)
+        buco = -interpax.interp1d(s, s_half, buco)  # sign flip LH -> RH
+        bvco = interpax.interp1d(s, s_half, bvco)
+        iota = -interpax.interp1d(s, s_half, iota)  # sign flip LH -> RH
+        psi_s = interpax.interp1d(s, s_half, psi_s)
 
         xm = file.variables["ixm_b"][:].filled()
         xn = file.variables["ixn_b"][:].filled()
