@@ -279,35 +279,21 @@ class Field(eqx.Module):
         r_mnc = file.variables["rmnc_b"][:].filled()
         nfp = int(file.variables["nfp_b"][:].filled())
         iota = file.variables["iota_b"][:].filled()
-        psi_s = file.variables["phip_b"][:].filled()
         buco = file.variables["buco_b"][:].filled()  # (AKA Boozer I)
         bvco = file.variables["bvco_b"][:].filled()  # (AKA Boozer G)
+        jlist = file.variables["jlist"][:].filled()
+        Psi = file.variables["phi_b"][:].filled()[-1]
 
-        # copied from fortran monkes, need to understand this
         R0 = r_mnc[1, 0]
         a_minor = R0 / aspect
 
-        def _clip(y):
-            # booz_xform stores stuff on the "half grid" of length ns-1, but because
-            # the world is awful, arrays sometimes have length ns with the first entry
-            # either zero or a copy of the 2nd entry. It doesn't seem consistent either,
-            # depending on which qty it is and what version of booz_xform it is.
-            # Simsopt seems to have the 2d arrays be shape(ns-1, mn)
-            # and 1d arrays shape(ns).
-            # CIEMAT Stellopt version has everything length ns.
-            # This just clips the first bogus value if it's there.
-            if y.shape[0] == ns:
-                y = y[1:]
-            assert y.shape[0] == ns - 1
-            return y
-
-        b_mnc, buco, bvco, iota, psi_s = map(_clip, (b_mnc, buco, bvco, iota, psi_s))
-
-        b_mnc = interpax.interp1d(s, s_half, b_mnc)
-        buco = -interpax.interp1d(s, s_half, buco)  # sign flip LH -> RH
-        bvco = interpax.interp1d(s, s_half, bvco)
-        iota = -interpax.interp1d(s, s_half, iota)  # sign flip LH -> RH
-        psi_s = interpax.interp1d(s, s_half, psi_s)
+        # jlist = 2 + indices of half grid where boozer transform was computed
+        b_mnc = interpax.interp1d(s, s_half[jlist - 2], b_mnc)
+        # profiles are on half grid, but with an extra 0 at the beginning bc
+        # the world is awful.
+        buco = -interpax.interp1d(s, s_half, buco[1:])  # sign flip LH -> RH
+        bvco = interpax.interp1d(s, s_half, bvco[1:])
+        iota = -interpax.interp1d(s, s_half, iota[1:])  # sign flip LH -> RH
 
         xm = file.variables["ixm_b"][:].filled()
         xn = file.variables["ixn_b"][:].filled()
@@ -315,6 +301,7 @@ class Field(eqx.Module):
         B0 = jnp.abs(b_mnc).max()
         mask = jnp.abs(b_mnc) > cutoff * B0
 
+        # booz_xform uses (m*t - n*z) instead of vmecs (m*t + n*z)
         Bmag = vmec_eval(theta[:, None], zeta[None, :], b_mnc * mask, 0, xm, -xn)
         dBdt = vmec_eval(theta[:, None], zeta[None, :], b_mnc * mask, 0, xm, -xn, dt=1)
         dBdz = vmec_eval(theta[:, None], zeta[None, :], b_mnc * mask, 0, xm, -xn, dz=1)
@@ -332,7 +319,9 @@ class Field(eqx.Module):
         data["B_sub_z"] = bvco * jnp.ones((ntheta, nzeta))
         data["B_sup_t"] = iota / sqrtg
         data["B_sup_z"] = 1 / sqrtg
-        data["psi_r"] = psi_s * 2 * jnp.sqrt(s) / a_minor
+        # d psi/drho = d Psi rho^2 / drho = 2 Psi rho;  r = rho*a
+        # d psi / dr = d psi / drho / a
+        data["psi_r"] = 2 * Psi * jnp.sqrt(s) / a_minor
         data["iota"] = iota
         data["B0"] = B0
         data["R_major"] = R0
