@@ -1,0 +1,84 @@
+[build-system]
+requires = ["hatchling", "hatch-vcs"]
+build-backend = "hatchling.build"
+
+[project]
+name = "monkes"
+dynamic = ["version"]
+description = "Monoenergetic Kinetic Equation Solver"
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+requires-python = ">=3.9"
+dependencies = [
+    "equinox>=0.11,<0.12",
+    "interpax",
+    "jax>=0.3.2,<0.5.0",
+    "jaxtyping",
+    "numpy>=1.20.0,<2.0",
+    "scipy>=1.7.0,<2.0.0",
+]
+
+[project.optional-dependencies]
+docs = [
+    "sphinx>3.0.0",
+    "sphinx-copybutton",
+    "sphinx-rtd-theme>=1.0,<2.0",
+    "sphinx-github-style>=1.0,<=1.1",
+]
+dev = [
+    "jax[cpu]>=0.3.2,<=0.5.0",
+    "pre-commit",
+    "pytest>=5.0.0",
+    "pytest-benchmark",
+    "pytest-cov>=2.6.0",
+    "pytest-monitor",
+]
+
+[tool.hatch.version]
+source = "vcs"
+
+[tool.hatch.version.raw-options]
+local_scheme = "no-local-version"
+
+[tool.hatch.build.hooks.vcs]
+version-file = "src/monkes/_version.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/monkes"]
+
+[tool.pytest.ini_options]
+markers = [
+    "unit: marks small unit tests",
+    "regression: marks end to end regression tests",
+    "slow: marks tests as slow (deselect with 'pytest -m \"not slow\"').",
+    "fast: mark tests as fast.",
+]
+filterwarnings = [
+    "error",
+    "ignore::pytest.PytestUnraisableExceptionWarning",
+    "ignore:numpy.ndarray size changed:RuntimeWarning",
+    "ignore::DeprecationWarning:ml_dtypes.*",
+]
+
+[tool.coverage.run]
+source = ["monkes"]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "if __name__ == .__main__.:",
+]
+ignore_errors = true
+
+[tool.ruff.lint]
+ignore = [
+    "E741",   # variable names like "l" are common for mode numbers
+]
+
+[tool.ruff.lint.per-file-ignores]
+"src/monkes/__init__.py" = ["F401"]
+"tests/*" = ["D100", "D101", "D102", "D103", "D106"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["monkes"]
